@@ -32,12 +32,36 @@ flowchart LR
 
 ## How will I verify the correctness of this program?
 
-I will prepare 5 builds, each with 10 questions and the correct answers. Then I will check whether the program correctly analyzed a given build and whether it is able to provide the correct answer.
+I will prepare 5 builds covering different cases:
+- 1 melee phys, 1 spell, 1 minion, 1 hybrid (e.g. converted damage), 1 niche/edge case
+Why these? They exercise different mechanic graph paths — pure damage scaling
+vs. conversion chains vs. minion stat inheritance.
+
+For each build, I will write 10 questions with verified correct answers, 
+covering: damage sources, defensive layers, scaling mechanics, and edge cases.
+Total: 50 test cases.
+
+A response counts as:
+- PASS: identifies the correct mechanic and the correct source
+- PARTIAL: identifies the mechanic but misses the source (or vice versa)
+- FAIL: incorrect or hallucinated
+
+Pass rate target for v1: 70% PASS, <10% FAIL.
 
 ## What will I measure while the program is running?
 
-Cost, time, answer accuracy, and the complexity of the problem to be solved.
+Per request:
+- Latency: p50 and p95 (target: p95 < 5s)
+- Cost: USD per query, broken down by embedding vs LLM tokens
+- Retrieval hit rate: did the retriever return the relevant graph nodes?
+- Answer accuracy: PASS/PARTIAL/FAIL (from eval harness)
 
+Aggregated:
+- Cost per 100 queries
+- Eval pass rate over time as I iterat
+- 
 ## What documents will I test it on?
 
-I will test it on builds from PoE Ninja that are web-scraped by this program.
+Top 5 most popular builds from poe.ninja for the current league, selected
+to cover different ascendancies and damage types. Stored locally as 
+fixtures so eval results are reproducible across runs.
