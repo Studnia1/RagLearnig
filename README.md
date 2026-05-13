@@ -74,3 +74,5 @@ I chose poe.ninja because it is the most popular website for browsing builds. Th
 If I had spent six more months on development, I would have considered: 
 a) Data collection — poe.ninja is a good temporary solution, but a better option would be to allow builds to be imported into our domain, or to use data from the game files. This would reduce the costs of maintaining and using the web scraper, and access to the data would also be easier. 
 b) Caching common builds and answers — many builds share common characteristics, for example builds based on fire damage or minions. In addition, most questions are asked about the most popular builds used by content creators. A good solution would be to store data for the most popular builds, together with questions and answers related to them. This would reduce costs, because querying a database is much cheaper than asking an LLM. 
+
+Each session logs question, answer, and user rating. Weekly review of negative-rated answers expands the eval set with real user questions and corrected ground truths.
