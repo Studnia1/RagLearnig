@@ -65,3 +65,12 @@ Aggregated:
 Top 5 most popular builds from poe.ninja for the current league, selected
 to cover different ascendancies and damage types. Stored locally as 
 fixtures so eval results are reproducible across runs.
+
+## Design decisions
+
+Choosing graph traversal instead of pure embeddings is the more appropriate approach for this domain. Path of Exile 2 is known for complex character builds and a large number of complicated mechanics, prefixes, and suffixes. Examples of such dependencies include: more damage, increased damage, damage converted to, and minion damage. As we can see, they all sound similar, but their actual effects are completely different. That is why embeddings alone would not be enough. The keyword “damage” by itself does not tell us much, while adding graph traversal allows us to check relationships, which is much more precise.
+I chose poe.ninja because it is the most popular website for browsing builds. The problem is that the website currently does not have an API, so a web scraper will be needed. This is not the best solution because it may require updates in the future, but unfortunately, at the moment, we do not have another option.
+
+If I had spent six more months on development, I would have considered: 
+a) Data collection — poe.ninja is a good temporary solution, but a better option would be to allow builds to be imported into our domain, or to use data from the game files. This would reduce the costs of maintaining and using the web scraper, and access to the data would also be easier. 
+b) Caching common builds and answers — many builds share common characteristics, for example builds based on fire damage or minions. In addition, most questions are asked about the most popular builds used by content creators. A good solution would be to store data for the most popular builds, together with questions and answers related to them. This would reduce costs, because querying a database is much cheaper than asking an LLM. 
