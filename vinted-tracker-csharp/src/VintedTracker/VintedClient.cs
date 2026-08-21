@@ -108,14 +108,16 @@ public sealed class VintedClient
             {
                 results = await SearchAsync(probe, ct: ct);
             }
-            catch (HttpRequestException)
+            catch (HttpRequestException e)
             {
+                Console.Error.WriteLine($"[warn] Sonda \"{probe}\" nieudana: {e.Message}");
                 continue;
             }
             var local = results
                 .Where(r => r.CatalogId is not null)
                 .GroupBy(r => r.CatalogId!.Value)
                 .ToDictionary(g => g.Key, g => g.Count());
+            Console.WriteLine($"[info] Sonda \"{probe}\": ofert {results.Count}, z catalog_id {local.Values.Sum()}");
             if (local.Count == 0)
                 continue;
             var total = local.Values.Sum();
@@ -187,22 +189,92 @@ public sealed class VintedClient
 
         var url = $"{_baseUrl}/api/v2/catalog/items?{queryString}";
 
+        HttpStatusCode lastStatus = 0;
         for (var attempt = 0; attempt < 3; attempt++)
         {
             using var resp = await _http.GetAsync(url, ct);
+            lastStatus = resp.StatusCode;
             if (resp.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
             {
                 await Task.Delay(TimeSpan.FromSeconds(1 + attempt * 2 + Random.Shared.NextDouble()), ct);
                 await RefreshSessionAsync(ct);
                 continue;
             }
-            resp.EnsureSuccessStatusCode();
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            if (!resp.IsSuccessStatusCode)
+                throw new HttpRequestException($"HTTP {(int)resp.StatusCode} z API: {Snippet(body)}");
 
-            var json = JsonNode.Parse(await resp.Content.ReadAsStringAsync(ct));
+            var json = JsonNode.Parse(body);
             var items = json?["items"] as JsonArray ?? [];
             return items.OfType<JsonNode>().Select(i => Listing.FromApi(i, _baseUrl)).ToList();
         }
 
-        throw new HttpRequestException("Vinted API wciąż odrzuca zapytanie (401/403) — spróbuj później");
+        throw new HttpRequestException($"Vinted API wciąż odrzuca zapytanie (HTTP {(int)lastStatus}) — spróbuj później");
+    }
+
+    private static string Snippet(string body)
+    {
+        var flat = body.ReplaceLineEndings(" ");
+        return flat.Length <= 300 ? flat : flat[..300] + "…";
+    }
+
+    /// <summary>
+    /// Tryb diagnostyczny: pokazuje krok po kroku, co odpowiada Vinted —
+    /// ciasteczka sesji, status i początek odpowiedzi wyszukiwania,
+    /// liczbę ofert i obecność catalog_id. Do wklejenia przy zgłaszaniu problemu.
+    /// </summary>
+    public async Task<string> DebugProbeAsync(string searchText, CancellationToken ct = default)
+    {
+        var report = new System.Text.StringBuilder();
+        report.AppendLine($"== Sonda diagnostyczna: \"{searchText}\" ({_baseUrl}) ==");
+        try
+        {
+            _authenticated = false;
+            await RefreshSessionAsync(ct);
+            var cookies = _cookies.GetAllCookies().Select(c => c.Name).ToList();
+            report.AppendLine($"Sesja OK, ciasteczka: {(cookies.Count > 0 ? string.Join(", ", cookies) : "BRAK")}");
+        }
+        catch (Exception e)
+        {
+            report.AppendLine($"Sesja NIEUDANA: {e.GetType().Name}: {e.Message}");
+            return report.ToString();
+        }
+
+        var query = HttpUtility.ParseQueryString(string.Empty);
+        query["search_text"] = searchText;
+        query["order"] = "newest_first";
+        query["per_page"] = "24";
+        query["page"] = "1";
+        var url = $"{_baseUrl}/api/v2/catalog/items?{query}";
+        try
+        {
+            using var resp = await _http.GetAsync(url, ct);
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            report.AppendLine($"GET /api/v2/catalog/items → HTTP {(int)resp.StatusCode}");
+            report.AppendLine($"Początek odpowiedzi: {Snippet(body)}");
+            if (resp.IsSuccessStatusCode)
+            {
+                var json = JsonNode.Parse(body);
+                var items = json?["items"] as JsonArray;
+                report.AppendLine($"items: {(items is null ? "BRAK POLA" : items.Count.ToString())}");
+                if (items is { Count: > 0 } && items[0] is JsonObject first)
+                {
+                    report.AppendLine($"klucze pierwszej oferty: {string.Join(", ", first.Select(kv => kv.Key))}");
+                    var withCatalog = items.OfType<JsonObject>().Count(i => i["catalog_id"] is not null);
+                    report.AppendLine($"ofert z catalog_id: {withCatalog}/{items.Count}");
+                    var histogram = items.OfType<JsonObject>()
+                        .Select(i => i["catalog_id"]?.ToString() ?? "brak")
+                        .GroupBy(x => x)
+                        .OrderByDescending(g => g.Count())
+                        .Select(g => $"{g.Key}×{g.Count()}");
+                    report.AppendLine($"catalog_id: {string.Join(", ", histogram)}");
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            report.AppendLine($"Zapytanie NIEUDANE: {e.GetType().Name}: {e.Message}");
+        }
+        return report.ToString();
     }
 }

@@ -18,6 +18,7 @@ public static class Program
     {
         var configPath = "config.json";
         var once = false;
+        var probe = false;
         for (var i = 0; i < args.Length; i++)
         {
             switch (args[i])
@@ -28,15 +29,26 @@ public static class Program
                 case "--once":
                     once = true;
                     break;
+                case "--probe":
+                    probe = true;
+                    break;
                 default:
                     Console.Error.WriteLine($"Nieznany argument: {args[i]}");
-                    Console.Error.WriteLine("Użycie: VintedTracker [--config config.json] [--once]");
+                    Console.Error.WriteLine("Użycie: VintedTracker [--config config.json] [--once] [--probe]");
                     return 2;
             }
         }
 
         var config = File.Exists(configPath) ? Config.Load(configPath) : new Config();
         var client = new VintedClient(config.Defaults.BaseUrl);
+
+        if (probe)
+        {
+            Console.WriteLine(await client.DebugProbeAsync("gra nintendo switch"));
+            Console.WriteLine(await client.DebugProbeAsync("pokemon"));
+            return 0;
+        }
+
         using var store = new SqliteStore(config.Defaults.StatePath);
         var watchlist = new WatchlistStore(config.Defaults.WatchlistPath);
         var notifier = new Notifier();
