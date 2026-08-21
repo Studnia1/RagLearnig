@@ -87,7 +87,7 @@ public sealed class TrackerEngine(
         {
             if (store.IsKnown(listing.Id))
                 continue;
-            var verdict = DealEvaluator.Evaluate(listing, game.MaxPrice, game.CriticScore, market);
+            var verdict = DealEvaluator.Evaluate(listing, game.MaxPrice, market);
             store.Remember(listing.Id, new SeenItem
             {
                 Query = game.Query,

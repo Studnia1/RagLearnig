@@ -116,7 +116,7 @@
   <div class="table-scroll">
   <table>
     <thead><tr>
-      <th>Gra</th><th>Zapytanie</th><th class="num">Krytycy</th>
+      <th>Gra</th><th>Zapytanie</th>
       <th class="num">Mediana rynku</th><th class="num">Próbka</th>
       <th class="num">Twój próg</th><th>Ostatnio sprawdzone</th><th></th>
     </tr></thead>
@@ -126,7 +126,6 @@
   <form class="addform" id="addForm">
     <input name="title" placeholder="Tytuł gry" required>
     <input name="query" placeholder="fraza wyszukiwania" required>
-    <input name="criticScore" type="number" min="0" max="100" placeholder="krytycy" style="width:90px">
     <input name="maxPrice" type="number" min="0" step="0.01" placeholder="próg zł" style="width:90px">
     <button class="primary">Dodaj grę</button>
   </form>
@@ -183,7 +182,6 @@ function renderGames(games) {
     <tr>
       <td>${esc(g.title)}</td>
       <td class="muted">${esc(g.query)}${g.lastError ? `<div class="error">⚠ ${esc(g.lastError)}</div>` : ''}</td>
-      <td class="num">${g.criticScore ?? '<span class="muted">—</span>'}</td>
       <td class="num">${g.median != null ? fmt.format(g.median) : '<span class="muted">za mało danych</span>'}</td>
       <td class="num muted">${g.sampleSize}</td>
       <td class="num"><input class="price" type="number" min="0" step="0.01"
@@ -227,7 +225,7 @@ document.getElementById('games').addEventListener('change', async e => {
   const g = lastData.games.find(x => x.query === input.dataset.q); if (!g) return;
   await fetch('/api/games', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: g.title, query: g.query, criticScore: g.criticScore,
+    body: JSON.stringify({ title: g.title, query: g.query,
       maxPrice: input.value === '' ? null : Number(input.value) }),
   });
   refresh();
@@ -247,7 +245,6 @@ document.getElementById('addForm').addEventListener('submit', async e => {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       title: f.get('title'), query: f.get('query'),
-      criticScore: f.get('criticScore') ? Number(f.get('criticScore')) : null,
       maxPrice: f.get('maxPrice') ? Number(f.get('maxPrice')) : null,
     }),
   });

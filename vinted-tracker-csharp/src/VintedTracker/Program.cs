@@ -74,7 +74,6 @@ public static class Program
                 {
                     g.Title,
                     g.Query,
-                    g.CriticScore,
                     g.MaxPrice,
                     Median = stats?.Median,
                     SampleSize = stats?.SampleSize ?? 0,

@@ -39,9 +39,9 @@ Pojedynczy sygnał cenowy kłamie, więc ocena jest wielowarstwowa:
 5. **Bezpiecznik too-good-to-be-true.** Cena ≤ **30% mediany** to częściej
    scam, uszkodzona płytka albo „samo pudełko” niż okazja — taka oferta
    dostaje status *Podejrzanie tanio* zamiast alertu.
-6. **Priorytet ważony jakością gry.** Wynik (score) = rabat × waga z oceny
-   krytyków (`0.5 + krytycy/200`), więc 35% zniżki na grę 90/100 sortuje się
-   wyżej niż 40% na grze 66/100.
+
+Wynik (score) okazji to procent rabatu względem najlepszego odniesienia —
+służy do sortowania alertów.
 
 Progi (`StrongRatio`, `DealRatio`, `SuspiciousRatio`, …) są stałymi
 w `DealEvaluator` — łatwo je przestroić.
@@ -76,13 +76,13 @@ export TELEGRAM_CHAT_ID="123456789"
 
 - **Okazje** — kanał z kartami (🔥 mocna / okazja / ⚠️ podejrzanie tanio),
   filtrowanie po typie, link do oferty, powody klasyfikacji, score.
-- **Śledzone gry** — mediana rynkowa i wielkość próbki na żywo, ocena
-  krytyków, edycja progu `maxPrice` wprost w tabeli, dodawanie i usuwanie
-  gier, błędy pobierania per gra.
+- **Śledzone gry** — mediana rynkowa i wielkość próbki na żywo, edycja
+  progu `maxPrice` wprost w tabeli, dodawanie i usuwanie gier, błędy
+  pobierania per gra.
 - **Sprawdź teraz** — ręczne wywołanie cyklu poza harmonogramem.
 
 Watchlista mieszka w `games.json` (edytowalna też ręcznie); w repo jest
-wypełniona grami Nintendo Switch z ocenami krytyków.
+wypełniona grami Nintendo Switch.
 
 ## Testy
 

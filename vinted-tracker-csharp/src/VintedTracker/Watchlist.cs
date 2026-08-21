@@ -7,7 +7,6 @@ public sealed class GameWatch
 {
     [JsonPropertyName("title")] public required string Title { get; set; }
     [JsonPropertyName("query")] public required string Query { get; set; }
-    [JsonPropertyName("criticScore")] public int? CriticScore { get; set; }
     [JsonPropertyName("maxPrice")] public decimal? MaxPrice { get; set; }
     [JsonPropertyName("catalogIds")] public List<int>? CatalogIds { get; set; }
 }

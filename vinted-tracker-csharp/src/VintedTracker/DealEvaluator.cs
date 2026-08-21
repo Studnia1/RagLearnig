@@ -35,10 +35,9 @@ public sealed record DealVerdict(DealTier Tier, double Score, IReadOnlyList<stri
 /// <item><b>Bezpiecznik too-good-to-be-true</b> — cena ≤ 30% mediany to
 /// zwykle scam, uszkodzona płytka albo „sam box”; oznaczamy jako
 /// podejrzaną zamiast świętować.</item>
-/// <item><b>Priorytet ważony jakością gry</b> — wynik (Score) mnoży rabat
-/// przez wagę z oceny krytyków, więc 35% zniżki na grę 90/100 wygrywa
-/// z 40% na grze 66/100 przy sortowaniu alertów.</item>
 /// </list>
+/// Wynik (Score) to procent rabatu względem najlepszego odniesienia —
+/// służy do sortowania alertów.
 /// </summary>
 public static class DealEvaluator
 {
@@ -82,7 +81,6 @@ public static class DealEvaluator
     public static DealVerdict Evaluate(
         Listing listing,
         decimal? maxPrice,
-        int? criticScore,
         IReadOnlyList<decimal> marketPrices)
     {
         var price = listing.Price;
@@ -146,10 +144,7 @@ public static class DealEvaluator
         if (tier == DealTier.None)
             return new DealVerdict(DealTier.None, 0, reasons);
 
-        // Priorytet: rabat ważony jakością gry (ocena krytyków 0-100).
-        // Bez oceny przyjmujemy neutralne 75.
-        var qualityWeight = 0.5 + (criticScore ?? 75) / 200.0;
-        var score = Math.Round((double)bestDiscount * 100 * qualityWeight, 1);
+        var score = Math.Round((double)bestDiscount * 100, 1);
         return new DealVerdict(tier, score, reasons);
     }
 

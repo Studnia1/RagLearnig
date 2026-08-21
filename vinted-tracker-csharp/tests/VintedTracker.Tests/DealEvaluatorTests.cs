@@ -16,7 +16,7 @@ public class DealEvaluatorTests
     [Fact]
     public void FarBelowMedianAndInBottomQuartileIsStrong()
     {
-        var v = DealEvaluator.Evaluate(MakeListing(110), maxPrice: null, criticScore: 80, marketPrices: Market);
+        var v = DealEvaluator.Evaluate(MakeListing(110), maxPrice: null, marketPrices: Market);
         Assert.Equal(DealTier.Strong, v.Tier);
         Assert.Contains("mediany", v.Reasons[0]);
     }
@@ -24,21 +24,21 @@ public class DealEvaluatorTests
     [Fact]
     public void ModeratelyBelowMedianIsOrdinaryDeal()
     {
-        var v = DealEvaluator.Evaluate(MakeListing(145), maxPrice: null, criticScore: 80, marketPrices: Market);
+        var v = DealEvaluator.Evaluate(MakeListing(145), maxPrice: null, marketPrices: Market);
         Assert.Equal(DealTier.Deal, v.Tier);
     }
 
     [Fact]
     public void NearMedianIsNotDeal()
     {
-        var v = DealEvaluator.Evaluate(MakeListing(190), maxPrice: null, criticScore: 80, marketPrices: Market);
+        var v = DealEvaluator.Evaluate(MakeListing(190), maxPrice: null, marketPrices: Market);
         Assert.Equal(DealTier.None, v.Tier);
     }
 
     [Fact]
     public void AbsurdlyCheapIsSuspiciousNotStrong()
     {
-        var v = DealEvaluator.Evaluate(MakeListing(40), maxPrice: null, criticScore: 80, marketPrices: Market);
+        var v = DealEvaluator.Evaluate(MakeListing(40), maxPrice: null, marketPrices: Market);
         Assert.Equal(DealTier.Suspicious, v.Tier);
         Assert.False(v.IsDeal);
     }
@@ -46,21 +46,21 @@ public class DealEvaluatorTests
     [Fact]
     public void WellUnderManualCapIsStrong()
     {
-        var v = DealEvaluator.Evaluate(MakeListing(100), maxPrice: 130, criticScore: 80, marketPrices: []);
+        var v = DealEvaluator.Evaluate(MakeListing(100), maxPrice: 130, marketPrices: []);
         Assert.Equal(DealTier.Strong, v.Tier);
     }
 
     [Fact]
     public void JustUnderManualCapIsOrdinaryDeal()
     {
-        var v = DealEvaluator.Evaluate(MakeListing(125), maxPrice: 130, criticScore: 80, marketPrices: []);
+        var v = DealEvaluator.Evaluate(MakeListing(125), maxPrice: 130, marketPrices: []);
         Assert.Equal(DealTier.Deal, v.Tier);
     }
 
     [Fact]
     public void SmallSampleMedianIgnored()
     {
-        var v = DealEvaluator.Evaluate(MakeListing(90), maxPrice: null, criticScore: 80, marketPrices: [200, 210]);
+        var v = DealEvaluator.Evaluate(MakeListing(90), maxPrice: null, marketPrices: [200, 210]);
         Assert.Equal(DealTier.None, v.Tier);
     }
 
@@ -69,7 +69,7 @@ public class DealEvaluatorTests
     {
         var v = DealEvaluator.Evaluate(
             MakeListing(15, "Etui na Nintendo Switch pokemon sword"),
-            maxPrice: 130, criticScore: 80, marketPrices: Market);
+            maxPrice: 130, marketPrices: Market);
         Assert.Equal(DealTier.None, v.Tier);
         Assert.Contains("akcesorium", v.Reasons[0]);
     }
@@ -79,16 +79,16 @@ public class DealEvaluatorTests
     {
         var v = DealEvaluator.Evaluate(
             MakeListing(20, "Pokemon Sword - samo pudełko po grze"),
-            maxPrice: 130, criticScore: 80, marketPrices: Market);
+            maxPrice: 130, marketPrices: Market);
         Assert.Equal(DealTier.None, v.Tier);
     }
 
     [Fact]
-    public void HigherCriticScoreRanksHigherAtSameDiscount()
+    public void ScoreEqualsDiscountPercent()
     {
-        var good = DealEvaluator.Evaluate(MakeListing(110), maxPrice: null, criticScore: 90, marketPrices: Market);
-        var meh = DealEvaluator.Evaluate(MakeListing(110), maxPrice: null, criticScore: 66, marketPrices: Market);
-        Assert.True(good.Score > meh.Score);
+        // 110 vs przycięta mediana 202.50 → rabat ~45.7%
+        var v = DealEvaluator.Evaluate(MakeListing(110), maxPrice: null, marketPrices: Market);
+        Assert.InRange(v.Score, 45, 47);
     }
 
     [Fact]
