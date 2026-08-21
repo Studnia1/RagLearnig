@@ -98,6 +98,7 @@ public sealed class TrackerEngine(
                 FirstSeenUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 Tier = _firstRun ? DealTier.None : verdict.Tier,
                 Score = verdict.Score,
+                ReferencePrice = verdict.ReferencePrice,
                 Reasons = verdict.Reasons.ToList(),
                 PhotoUrl = listing.PhotoUrl,
             });

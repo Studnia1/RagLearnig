@@ -93,6 +93,7 @@ public static class Program
                 kv.Value.PhotoUrl,
                 Tier = kv.Value.Tier.ToString(),
                 kv.Value.Score,
+                kv.Value.ReferencePrice,
                 kv.Value.Reasons,
                 FirstSeen = DateTimeOffset.FromUnixTimeSeconds(kv.Value.FirstSeenUnix),
             });

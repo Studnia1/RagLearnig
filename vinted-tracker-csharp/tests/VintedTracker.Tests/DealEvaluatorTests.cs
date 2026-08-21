@@ -84,6 +84,29 @@ public class DealEvaluatorTests
     }
 
     [Fact]
+    public void MarketDealCarriesMedianAsReferencePrice()
+    {
+        var v = DealEvaluator.Evaluate(MakeListing(110), maxPrice: null, marketPrices: Market);
+        Assert.NotNull(v.ReferencePrice);
+        Assert.InRange(v.ReferencePrice!.Value, 195, 210); // przycięta mediana
+    }
+
+    [Fact]
+    public void CapDealCarriesCapAsReferencePrice()
+    {
+        var v = DealEvaluator.Evaluate(MakeListing(100), maxPrice: 130, marketPrices: []);
+        Assert.Equal(130m, v.ReferencePrice);
+    }
+
+    [Fact]
+    public void ReferencePriceIsTheOneWithBiggerDiscount()
+    {
+        // Rabat vs mediana (~46%) większy niż vs próg 120 (8%) → odniesieniem mediana.
+        var v = DealEvaluator.Evaluate(MakeListing(110), maxPrice: 120, marketPrices: Market);
+        Assert.True(v.ReferencePrice > 150);
+    }
+
+    [Fact]
     public void ScoreEqualsDiscountPercent()
     {
         // 110 vs przycięta mediana 202.50 → rabat ~45.7%

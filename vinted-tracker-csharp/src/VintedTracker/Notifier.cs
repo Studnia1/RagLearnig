@@ -20,7 +20,10 @@ public sealed class Notifier
         var label = verdict.Tier == DealTier.Strong ? "MOCNA OKAZJA" : "Okazja";
         var sb = new StringBuilder();
         sb.AppendLine($"🎮 {label} [{gameTitle}] (score {verdict.Score:0.#}): {listing.Title}");
-        sb.AppendLine($"   {listing.Price:0.00} {listing.Currency} — {listing.Url}");
+        var saving = verdict.ReferencePrice is { } r
+            ? $" (−{r - listing.Price:0.00} vs {r:0.00})"
+            : "";
+        sb.AppendLine($"   {listing.Price:0.00} {listing.Currency}{saving} — {listing.Url}");
         foreach (var reason in verdict.Reasons)
             sb.AppendLine($"   • {reason}");
         return sb.ToString().TrimEnd();

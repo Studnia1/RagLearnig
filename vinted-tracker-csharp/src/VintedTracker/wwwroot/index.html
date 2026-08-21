@@ -80,6 +80,11 @@
   .card a { color: var(--accent); text-decoration: none; font-weight: 600; }
   .card a:hover { text-decoration: underline; }
   .card .price { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .card .delta {
+    font-weight: 700; font-variant-numeric: tabular-nums;
+    background: var(--strong-bg); color: var(--strong-ink);
+    padding: 1px 8px; border-radius: 999px; font-size: 13px;
+  }
   .card .reasons { color: var(--ink-2); font-size: 13px; margin-top: 2px; }
   .card .meta { color: var(--ink-3); font-size: 12px; margin-top: 2px; }
   .addform { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
@@ -169,6 +174,9 @@ function renderDeals(deals) {
           ${tierBadge[d.tier] ?? ''}
           <a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.title)}</a>
           <span class="price">${fmt.format(d.price)} ${esc(d.currency)}</span>
+          ${d.referencePrice != null && d.referencePrice > d.price
+            ? `<span class="delta" title="różnica względem odniesienia ${fmt.format(d.referencePrice)} ${esc(d.currency)}">−${fmt.format(d.referencePrice - d.price)} ${esc(d.currency)}</span>`
+            : ''}
         </div>
         <div class="reasons">${d.reasons.map(esc).join(' · ')}</div>
         <div class="meta">${esc(d.query)} · score ${d.score} · ${ago(d.firstSeen)}</div>

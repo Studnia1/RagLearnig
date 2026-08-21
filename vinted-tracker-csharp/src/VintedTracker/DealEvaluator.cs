@@ -12,7 +12,10 @@ public enum DealTier
     Suspicious,
 }
 
-public sealed record DealVerdict(DealTier Tier, double Score, IReadOnlyList<string> Reasons)
+/// <param name="ReferencePrice">Cena odniesienia (mediana rynkowa lub Twój
+/// próg — ta, względem której rabat jest największy); null, gdy brak sygnału.</param>
+public sealed record DealVerdict(
+    DealTier Tier, double Score, IReadOnlyList<string> Reasons, decimal? ReferencePrice = null)
 {
     public bool IsDeal => Tier is DealTier.Deal or DealTier.Strong;
 }
@@ -94,6 +97,7 @@ public static class DealEvaluator
         var reasons = new List<string>();
         var tier = DealTier.None;
         decimal bestDiscount = 0; // ułamek 0..1 względem najlepszego odniesienia
+        decimal? bestReference = null;
 
         // Sygnał rynkowy: przycięta mediana + dolny kwartyl.
         var sample = marketPrices.Where(p => p >= MinSanePrice).ToList();
@@ -112,6 +116,7 @@ public static class DealEvaluator
             {
                 tier = DealTier.Strong;
                 bestDiscount = 1 - ratio;
+                bestReference = reference;
                 reasons.Add($"{1 - ratio:P0} poniżej mediany rynkowej ({reference:0.00} {listing.Currency}, " +
                             $"n={sample.Count}) i w dolnym kwartyle cen");
             }
@@ -119,6 +124,7 @@ public static class DealEvaluator
             {
                 tier = DealTier.Deal;
                 bestDiscount = 1 - ratio;
+                bestReference = reference;
                 reasons.Add($"{1 - ratio:P0} poniżej mediany rynkowej ({reference:0.00} {listing.Currency}, n={sample.Count})");
             }
         }
@@ -138,14 +144,18 @@ public static class DealEvaluator
                     tier = DealTier.Deal;
                 reasons.Add($"cena {price:0.00} {listing.Currency} ≤ Twój próg {cap:0.00}");
             }
-            bestDiscount = Math.Max(bestDiscount, capDiscount);
+            if (capDiscount > bestDiscount)
+            {
+                bestDiscount = capDiscount;
+                bestReference = cap;
+            }
         }
 
         if (tier == DealTier.None)
             return new DealVerdict(DealTier.None, 0, reasons);
 
         var score = Math.Round((double)bestDiscount * 100, 1);
-        return new DealVerdict(tier, score, reasons);
+        return new DealVerdict(tier, score, reasons, bestReference);
     }
 
     /// <summary>Mediana z próbki przyciętej o 10% najtańszych i 10% najdroższych.</summary>

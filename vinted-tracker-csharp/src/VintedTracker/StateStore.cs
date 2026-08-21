@@ -15,6 +15,7 @@ public sealed class SeenItem
     [JsonConverter(typeof(JsonStringEnumConverter<DealTier>))]
     public DealTier Tier { get; init; } = DealTier.None;
     [JsonPropertyName("score")] public double Score { get; init; }
+    [JsonPropertyName("referencePrice")] public decimal? ReferencePrice { get; init; }
     [JsonPropertyName("reasons")] public List<string> Reasons { get; init; } = [];
     [JsonPropertyName("photoUrl")] public string? PhotoUrl { get; init; }
 }
