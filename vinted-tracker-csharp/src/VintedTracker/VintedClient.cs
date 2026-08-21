@@ -81,18 +81,75 @@ public sealed class VintedClient
     }
 
     /// <summary>
-    /// Próbuje znaleźć ID katalogu gier w drzewie kategorii Vinted
-    /// (szuka tytułu zawierającego "gry"/"games"). Null, gdy się nie uda —
-    /// wtedy trzeba podać catalogIds w konfiguracji.
+    /// Znajduje katalog(i) gier bez udziału użytkownika. Najpierw próbuje
+    /// drzewa kategorii; gdy to zawiedzie (endpoint bywa zmieniany), robi
+    /// sondy wyszukiwarką ("gra nintendo switch", "gra ps5", …) i zbiera
+    /// <c>catalog_id</c> ze zwróconych ofert — najczęstsze ID w takich
+    /// wynikach to z definicji katalogi gier. Null dopiero, gdy obie drogi
+    /// zawiodą — wtedy zostaje ręczne catalogIds w konfiguracji.
     /// </summary>
-    public async Task<(int Id, string Title)?> DiscoverGamesCatalogAsync(CancellationToken ct = default)
+    public async Task<(IReadOnlyList<int> Ids, string Description)?> DiscoverGamesCatalogsAsync(
+        CancellationToken ct = default)
     {
-        if (!_authenticated)
-            await RefreshSessionAsync(ct);
-        using var resp = await _http.GetAsync($"{_baseUrl}/api/v2/catalogs", ct);
-        if (!resp.IsSuccessStatusCode)
+        if (await TryTreeDiscoveryAsync(ct) is { } fromTree)
+            return (new[] { fromTree.Id }, $"{fromTree.Title} (#{fromTree.Id})");
+
+        string[] probes =
+        [
+            "gra nintendo switch", "gra playstation 5", "gra playstation 4",
+            "gra xbox", "pokemon nintendo switch",
+        ];
+        var counts = new Dictionary<int, int>();
+        var significant = new HashSet<int>();
+        foreach (var probe in probes)
+        {
+            IReadOnlyList<Listing> results;
+            try
+            {
+                results = await SearchAsync(probe, ct: ct);
+            }
+            catch (HttpRequestException)
+            {
+                continue;
+            }
+            var local = results
+                .Where(r => r.CatalogId is not null)
+                .GroupBy(r => r.CatalogId!.Value)
+                .ToDictionary(g => g.Key, g => g.Count());
+            if (local.Count == 0)
+                continue;
+            var total = local.Values.Sum();
+            foreach (var (id, n) in local)
+            {
+                counts[id] = counts.GetValueOrDefault(id) + n;
+                // Liczą się tylko ID z wyraźnym udziałem w sondzie — pojedyncza
+                // koszulka z Pokémonem nie wciągnie katalogu odzieży.
+                if (n >= Math.Max(5, total / 4))
+                    significant.Add(id);
+            }
+            await Task.Delay(TimeSpan.FromSeconds(1 + Random.Shared.NextDouble()), ct);
+        }
+
+        var ids = significant.OrderByDescending(id => counts[id]).Take(6).ToList();
+        return ids.Count > 0 ? (ids, $"z sond wyszukiwania: {string.Join(",", ids)}") : null;
+    }
+
+    private async Task<(int Id, string Title)?> TryTreeDiscoveryAsync(CancellationToken ct)
+    {
+        JsonNode? json;
+        try
+        {
+            if (!_authenticated)
+                await RefreshSessionAsync(ct);
+            using var resp = await _http.GetAsync($"{_baseUrl}/api/v2/catalogs", ct);
+            if (!resp.IsSuccessStatusCode)
+                return null;
+            json = JsonNode.Parse(await resp.Content.ReadAsStringAsync(ct));
+        }
+        catch (HttpRequestException)
+        {
             return null;
-        var json = JsonNode.Parse(await resp.Content.ReadAsStringAsync(ct));
+        }
         var best = default((int Id, string Title)?);
         void Walk(JsonNode? node)
         {

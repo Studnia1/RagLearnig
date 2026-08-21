@@ -8,7 +8,7 @@ public class DealEvaluatorTests
 {
     private static Listing MakeListing(decimal price, string title = "Pokemon Sword Nintendo Switch") =>
         new(Id: 1, Title: title, Price: price, Currency: "PLN", TotalPrice: null,
-            Brand: null, Url: "https://www.vinted.pl/items/1", PhotoUrl: null);
+            Brand: null, Url: "https://www.vinted.pl/items/1", PhotoUrl: null, CatalogId: null);
 
     private static readonly decimal[] Market =
         [180, 190, 195, 200, 200, 205, 210, 215, 220, 400]; // 400 = bundel-outlier
@@ -141,6 +141,7 @@ public class DealEvaluatorTests
             "price": {"amount": "149.0", "currency_code": "PLN"},
             "total_item_price": {"amount": "156.7", "currency_code": "PLN"},
             "brand_title": "Nintendo",
+            "catalog_id": 3025,
             "photo": {"url": "https://img"}
         }
         """)!;
@@ -149,6 +150,7 @@ public class DealEvaluatorTests
         Assert.Equal("PLN", l.Currency);
         Assert.Equal(156.7m, l.TotalPrice);
         Assert.Equal("https://www.vinted.pl/items/42", l.Url);
+        Assert.Equal(3025, l.CatalogId);
     }
 
     [Fact]

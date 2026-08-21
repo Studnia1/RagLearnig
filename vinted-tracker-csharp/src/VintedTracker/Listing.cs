@@ -12,7 +12,8 @@ public sealed record Listing(
     decimal? TotalPrice,
     string? Brand,
     string Url,
-    string? PhotoUrl)
+    string? PhotoUrl,
+    int? CatalogId)
 {
     /// <summary>
     /// Parsuje element z odpowiedzi API. Cena bywa stringiem, liczbą albo
@@ -38,6 +39,13 @@ public sealed record Listing(
         static string? CurrencyOf(JsonNode? node) =>
             node is JsonObject obj ? obj["currency_code"]?.GetValue<string>() : null;
 
+        static int? IntOf(JsonNode? node) => node switch
+        {
+            JsonValue v when v.TryGetValue(out long l) => (int)l,
+            JsonValue v when v.TryGetValue(out string? s) && int.TryParse(s, out var p) => p,
+            _ => null,
+        };
+
         long id = item["id"]!.GetValue<long>();
         return new Listing(
             Id: id,
@@ -47,6 +55,7 @@ public sealed record Listing(
             TotalPrice: Amount(item["total_item_price"]),
             Brand: item["brand_title"]?.GetValue<string>(),
             Url: item["url"]?.GetValue<string>() ?? $"{baseUrl}/items/{id}",
-            PhotoUrl: item["photo"] is JsonObject photo ? photo["url"]?.GetValue<string>() : null);
+            PhotoUrl: item["photo"] is JsonObject photo ? photo["url"]?.GetValue<string>() : null,
+            CatalogId: IntOf(item["catalog_id"]));
     }
 }

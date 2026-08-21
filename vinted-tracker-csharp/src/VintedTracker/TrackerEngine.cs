@@ -141,23 +141,29 @@ public sealed class TrackerEngine(
             return config.Defaults.CatalogIds;
         }
 
-        if (store.GetMeta("catalog_id") is { } saved && int.TryParse(saved, out var savedId))
+        if (store.GetMeta("catalog_ids") is { } saved)
         {
-            CatalogInfo = $"{store.GetMeta("catalog_title")} (#{savedId})";
-            return [savedId];
+            var savedIds = saved.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => int.TryParse(s, out var id) ? id : (int?)null)
+                .Where(id => id is not null).Select(id => id!.Value).ToList();
+            if (savedIds.Count > 0)
+            {
+                CatalogInfo = store.GetMeta("catalog_info") ?? saved;
+                return savedIds;
+            }
         }
 
         try
         {
-            if (await client.DiscoverGamesCatalogAsync(ct) is { } found)
+            if (await client.DiscoverGamesCatalogsAsync(ct) is { } found)
             {
-                store.SetMeta("catalog_id", found.Id.ToString());
-                store.SetMeta("catalog_title", found.Title);
-                CatalogInfo = $"{found.Title} (#{found.Id})";
-                Console.WriteLine($"[info] Wykryto katalog gier: {found.Title} (#{found.Id})");
-                return [found.Id];
+                store.SetMeta("catalog_ids", string.Join(",", found.Ids));
+                store.SetMeta("catalog_info", found.Description);
+                CatalogInfo = found.Description;
+                Console.WriteLine($"[info] Wykryto katalog gier: {found.Description}");
+                return found.Ids;
             }
-            LastError = "Nie znalazłem katalogu gier w drzewie kategorii — podaj catalogIds w config.json";
+            LastError = "Nie udało się wykryć katalogu gier (drzewo kategorii ani sondy wyszukiwania) — podaj catalogIds w config.json";
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
         {
