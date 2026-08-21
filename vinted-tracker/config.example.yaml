@@ -1,0 +1,19 @@
+# Skopiuj do config.yaml i dostosuj.
+defaults:
+  base_url: https://www.vinted.pl   # domena decyduje o rynku i walucie
+  poll_interval_seconds: 300        # co ile sekund sprawdzać nowe oferty
+  db_path: data/tracker.sqlite3
+  discount_threshold: 0.6           # okazja = cena <= 60% mediany rynkowej
+  # ID katalogu "Gry i konsole" różni się między domenami Vinted.
+  # Zostaw puste, by szukać po samej frazie, albo podaj ID podejrzane
+  # z adresu URL katalogu w przeglądarce (np. .../catalog/3025-gry).
+  catalog_ids: []
+
+watches:
+  - query: "zelda tears of the kingdom"
+    max_price: 150        # PLN — poniżej tej ceny zawsze alert
+  - query: "elden ring ps5"
+    max_price: 90
+  - query: "mario kart 8 deluxe"
+    max_price: 130
+    discount_threshold: 0.65   # można nadpisać per zapytanie
