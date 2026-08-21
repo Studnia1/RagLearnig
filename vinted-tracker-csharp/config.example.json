@@ -1,18 +1,16 @@
 {
   // Skopiuj do config.json i dostosuj (komentarze i przecinki końcowe są dozwolone).
+  // Lista śledzonych gier mieszka osobno, w pliku wskazanym przez watchlistPath
+  // (domyślnie games.json) i jest edytowalna z poziomu dashboardu.
   "defaults": {
     "baseUrl": "https://www.vinted.pl",
     "pollIntervalSeconds": 300,
     "statePath": "data/state.json",
-    "discountThreshold": 0.6,
+    "watchlistPath": "games.json",
+    "listenUrl": "http://localhost:5177",
     // ID katalogu "Gry i konsole" różni się między domenami Vinted.
     // Zostaw puste, by szukać po samej frazie, albo podaj ID podejrzane
     // z adresu URL katalogu w przeglądarce (np. .../catalog/3025-gry).
     "catalogIds": []
-  },
-  "watches": [
-    { "query": "zelda tears of the kingdom", "maxPrice": 150 },
-    { "query": "elden ring ps5", "maxPrice": 90 },
-    { "query": "mario kart 8 deluxe", "maxPrice": 130, "discountThreshold": 0.65 }
-  ]
+  }
 }

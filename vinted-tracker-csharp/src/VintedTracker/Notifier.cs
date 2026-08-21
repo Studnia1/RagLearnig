@@ -15,12 +15,13 @@ public sealed class Notifier
     private readonly string? _telegramToken = Environment.GetEnvironmentVariable("TELEGRAM_BOT_TOKEN");
     private readonly string? _telegramChatId = Environment.GetEnvironmentVariable("TELEGRAM_CHAT_ID");
 
-    public static string FormatDeal(Listing listing, string query, IReadOnlyList<string> reasons)
+    public static string FormatDeal(Listing listing, string gameTitle, DealVerdict verdict)
     {
+        var label = verdict.Tier == DealTier.Strong ? "MOCNA OKAZJA" : "Okazja";
         var sb = new StringBuilder();
-        sb.AppendLine($"🎮 OKAZJA [{query}]: {listing.Title}");
+        sb.AppendLine($"🎮 {label} [{gameTitle}] (score {verdict.Score:0.#}): {listing.Title}");
         sb.AppendLine($"   {listing.Price:0.00} {listing.Currency} — {listing.Url}");
-        foreach (var reason in reasons)
+        foreach (var reason in verdict.Reasons)
             sb.AppendLine($"   • {reason}");
         return sb.ToString().TrimEnd();
     }

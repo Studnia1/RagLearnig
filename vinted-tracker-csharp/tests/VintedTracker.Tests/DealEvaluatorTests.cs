@@ -6,55 +6,97 @@ namespace VintedTracker.Tests;
 
 public class DealEvaluatorTests
 {
-    private static Listing MakeListing(decimal price, string title = "Gra testowa") =>
+    private static Listing MakeListing(decimal price, string title = "Pokemon Sword Nintendo Switch") =>
         new(Id: 1, Title: title, Price: price, Currency: "PLN", TotalPrice: null,
             Brand: null, Url: "https://www.vinted.pl/items/1", PhotoUrl: null);
 
-    [Fact]
-    public void BelowMaxPriceIsDeal()
-    {
-        var v = DealEvaluator.Evaluate(MakeListing(100), maxPrice: 120, marketPrices: []);
-        Assert.True(v.IsDeal);
-        Assert.Contains("próg", v.Reasons[0]);
-    }
+    private static readonly decimal[] Market =
+        [180, 190, 195, 200, 200, 205, 210, 215, 220, 400]; // 400 = bundel-outlier
 
     [Fact]
-    public void AboveMaxPriceWithNoMarketIsNotDeal()
+    public void FarBelowMedianAndInBottomQuartileIsStrong()
     {
-        var v = DealEvaluator.Evaluate(MakeListing(150), maxPrice: 120, marketPrices: []);
-        Assert.False(v.IsDeal);
-    }
-
-    [Fact]
-    public void FarBelowMedianIsDeal()
-    {
-        decimal[] market = [200, 210, 190, 205, 195, 200];
-        var v = DealEvaluator.Evaluate(MakeListing(90), maxPrice: null, marketPrices: market);
-        Assert.True(v.IsDeal);
+        var v = DealEvaluator.Evaluate(MakeListing(110), maxPrice: null, criticScore: 80, marketPrices: Market);
+        Assert.Equal(DealTier.Strong, v.Tier);
         Assert.Contains("mediany", v.Reasons[0]);
+    }
+
+    [Fact]
+    public void ModeratelyBelowMedianIsOrdinaryDeal()
+    {
+        var v = DealEvaluator.Evaluate(MakeListing(145), maxPrice: null, criticScore: 80, marketPrices: Market);
+        Assert.Equal(DealTier.Deal, v.Tier);
     }
 
     [Fact]
     public void NearMedianIsNotDeal()
     {
-        decimal[] market = [200, 210, 190, 205, 195, 200];
-        var v = DealEvaluator.Evaluate(MakeListing(180), maxPrice: null, marketPrices: market);
+        var v = DealEvaluator.Evaluate(MakeListing(190), maxPrice: null, criticScore: 80, marketPrices: Market);
+        Assert.Equal(DealTier.None, v.Tier);
+    }
+
+    [Fact]
+    public void AbsurdlyCheapIsSuspiciousNotStrong()
+    {
+        var v = DealEvaluator.Evaluate(MakeListing(40), maxPrice: null, criticScore: 80, marketPrices: Market);
+        Assert.Equal(DealTier.Suspicious, v.Tier);
         Assert.False(v.IsDeal);
+    }
+
+    [Fact]
+    public void WellUnderManualCapIsStrong()
+    {
+        var v = DealEvaluator.Evaluate(MakeListing(100), maxPrice: 130, criticScore: 80, marketPrices: []);
+        Assert.Equal(DealTier.Strong, v.Tier);
+    }
+
+    [Fact]
+    public void JustUnderManualCapIsOrdinaryDeal()
+    {
+        var v = DealEvaluator.Evaluate(MakeListing(125), maxPrice: 130, criticScore: 80, marketPrices: []);
+        Assert.Equal(DealTier.Deal, v.Tier);
     }
 
     [Fact]
     public void SmallSampleMedianIgnored()
     {
-        var v = DealEvaluator.Evaluate(MakeListing(90), maxPrice: null, marketPrices: [200, 210]);
-        Assert.False(v.IsDeal);
+        var v = DealEvaluator.Evaluate(MakeListing(90), maxPrice: null, criticScore: 80, marketPrices: [200, 210]);
+        Assert.Equal(DealTier.None, v.Tier);
     }
 
     [Fact]
-    public void SuspiciouslyCheapRejected()
+    public void AccessoryIsFilteredOutEvenWhenCheap()
     {
-        var market = Enumerable.Repeat(200m, 10).ToList();
-        var v = DealEvaluator.Evaluate(MakeListing(1), maxPrice: 120, marketPrices: market);
-        Assert.False(v.IsDeal);
+        var v = DealEvaluator.Evaluate(
+            MakeListing(15, "Etui na Nintendo Switch pokemon sword"),
+            maxPrice: 130, criticScore: 80, marketPrices: Market);
+        Assert.Equal(DealTier.None, v.Tier);
+        Assert.Contains("akcesorium", v.Reasons[0]);
+    }
+
+    [Fact]
+    public void BoxOnlyIsFilteredOut()
+    {
+        var v = DealEvaluator.Evaluate(
+            MakeListing(20, "Pokemon Sword - samo pudełko po grze"),
+            maxPrice: 130, criticScore: 80, marketPrices: Market);
+        Assert.Equal(DealTier.None, v.Tier);
+    }
+
+    [Fact]
+    public void HigherCriticScoreRanksHigherAtSameDiscount()
+    {
+        var good = DealEvaluator.Evaluate(MakeListing(110), maxPrice: null, criticScore: 90, marketPrices: Market);
+        var meh = DealEvaluator.Evaluate(MakeListing(110), maxPrice: null, criticScore: 66, marketPrices: Market);
+        Assert.True(good.Score > meh.Score);
+    }
+
+    [Fact]
+    public void TrimmedMedianResistsOutliers()
+    {
+        // Bez przycięcia bundel za 400 zawyżałby odniesienie.
+        var trimmed = DealEvaluator.TrimmedMedian(Market);
+        Assert.InRange(trimmed, 195, 210);
     }
 
     [Theory]

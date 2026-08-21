@@ -1,8 +1,16 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
 namespace VintedTracker;
 
 /// <summary>
-/// Pętla główna: cyklicznie odpytuje Vinted i zgłasza okazje.
-/// Uruchomienie: <c>dotnet run -- --config config.json [--once] [--verbose]</c>
+/// Tracker okazji + webowy dashboard.
+/// Uruchomienie: <c>dotnet run -- [--config config.json] [--once]</c>.
+/// Domyślnie startuje serwer (adres w konfiguracji, <c>listenUrl</c>)
+/// z pętlą sprawdzającą w tle; <c>--once</c> robi jeden przebieg bez UI.
 /// </summary>
 public static class Program
 {
@@ -10,7 +18,6 @@ public static class Program
     {
         var configPath = "config.json";
         var once = false;
-        var verbose = false;
         for (var i = 0; i < args.Length; i++)
         {
             switch (args[i])
@@ -21,112 +28,139 @@ public static class Program
                 case "--once":
                     once = true;
                     break;
-                case "--verbose":
-                    verbose = true;
-                    break;
                 default:
                     Console.Error.WriteLine($"Nieznany argument: {args[i]}");
-                    Console.Error.WriteLine("Użycie: VintedTracker [--config config.json] [--once] [--verbose]");
+                    Console.Error.WriteLine("Użycie: VintedTracker [--config config.json] [--once]");
                     return 2;
             }
         }
 
-        var config = Config.Load(configPath);
+        var config = File.Exists(configPath) ? Config.Load(configPath) : new Config();
         var client = new VintedClient(config.Defaults.BaseUrl);
         var store = new StateStore(config.Defaults.StatePath);
+        var watchlist = new WatchlistStore(config.Defaults.WatchlistPath);
         var notifier = new Notifier();
+        var engine = new TrackerEngine(config, client, store, watchlist, notifier);
 
-        using var cts = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
-
-        var firstRun = true;
-        while (!cts.IsCancellationRequested)
+        if (once)
         {
-            try
-            {
-                await RunOnceAsync(config, client, store, notifier, firstRun, verbose, cts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception e)
-            {
-                Console.Error.WriteLine($"[error] Przebieg zakończony błędem — próbuję dalej: {e.Message}");
-            }
-            firstRun = false;
-            if (once)
-                break;
-
-            var interval = config.Defaults.PollIntervalSeconds;
-            var sleep = TimeSpan.FromSeconds(interval + Random.Shared.NextDouble() * interval * 0.2);
-            Log(verbose: true, $"Śpię {sleep.TotalSeconds:0} s");
-            try { await Task.Delay(sleep, cts.Token); }
-            catch (OperationCanceledException) { break; }
+            using var cts = new CancellationTokenSource();
+            Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+            await engine.RunCycleAsync(cts.Token);
+            return 0;
         }
 
+        // Pliki danych (config/games/state) są względem katalogu roboczego,
+        // ale dashboard serwujemy z wwwroot obok binarki — niezależnie od cwd.
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+        {
+            WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot"),
+        });
+        builder.Logging.SetMinimumLevel(LogLevel.Warning);
+        builder.WebHost.UseUrls(config.Defaults.ListenUrl);
+        builder.Services.AddSingleton(engine);
+        builder.Services.AddHostedService(_ => new PollingService(engine, config.Defaults.PollIntervalSeconds));
+
+        var app = builder.Build();
+        app.UseDefaultFiles();
+        app.UseStaticFiles();
+
+        app.MapGet("/api/overview", () =>
+        {
+            var games = watchlist.Snapshot().Select(g =>
+            {
+                var stats = engine.Stats.GetValueOrDefault(g.Query);
+                return new
+                {
+                    g.Title,
+                    g.Query,
+                    g.CriticScore,
+                    g.MaxPrice,
+                    Median = stats?.Median,
+                    SampleSize = stats?.SampleSize ?? 0,
+                    LastChecked = stats?.LastChecked,
+                    LastError = stats?.LastError,
+                    SeenCount = store.CountForQuery(g.Query),
+                };
+            });
+            var deals = store.RecentDeals(150).Select(kv => new
+            {
+                Id = kv.Key,
+                kv.Value.Query,
+                kv.Value.Title,
+                kv.Value.Price,
+                kv.Value.Currency,
+                kv.Value.Url,
+                kv.Value.PhotoUrl,
+                Tier = kv.Value.Tier.ToString(),
+                kv.Value.Score,
+                kv.Value.Reasons,
+                FirstSeen = DateTimeOffset.FromUnixTimeSeconds(kv.Value.FirstSeenUnix),
+            });
+            return Results.Ok(new
+            {
+                Games = games,
+                Deals = deals,
+                Status = new
+                {
+                    engine.CycleInProgress,
+                    engine.LastCycleFinished,
+                    PollIntervalSeconds = config.Defaults.PollIntervalSeconds,
+                    config.Defaults.BaseUrl,
+                },
+            });
+        });
+
+        app.MapPost("/api/games", (GameWatch game) =>
+        {
+            if (string.IsNullOrWhiteSpace(game.Query) || string.IsNullOrWhiteSpace(game.Title))
+                return Results.BadRequest(new { error = "Wymagane pola: title, query" });
+            watchlist.Upsert(game);
+            return Results.Ok(game);
+        });
+
+        app.MapDelete("/api/games/{query}", (string query) =>
+            watchlist.Remove(query) ? Results.NoContent() : Results.NotFound());
+
+        app.MapPost("/api/check", (TrackerEngine eng) =>
+        {
+            if (eng.CycleInProgress)
+                return Results.Conflict(new { error = "Cykl już trwa" });
+            _ = Task.Run(() => eng.RunCycleAsync(CancellationToken.None));
+            return Results.Accepted();
+        });
+
+        Console.WriteLine($"Dashboard: {config.Defaults.ListenUrl}");
+        await app.RunAsync();
+        store.Save();
         return 0;
     }
 
-    private static async Task RunOnceAsync(
-        Config config, VintedClient client, StateStore store, Notifier notifier,
-        bool firstRun, bool verbose, CancellationToken ct)
+    /// <summary>Pętla w tle: cykl, sen z losowym rozrzutem, od nowa.</summary>
+    private sealed class PollingService(TrackerEngine engine, int intervalSeconds) : BackgroundService
     {
-        var dealsFound = 0;
-        foreach (var watch in config.Watches)
+        protected override async Task ExecuteAsync(CancellationToken ct)
         {
-            ct.ThrowIfCancellationRequested();
-            var catalogIds = watch.CatalogIds is { Count: > 0 } ids ? ids : config.Defaults.CatalogIds;
-            var discount = watch.DiscountThreshold ?? config.Defaults.DiscountThreshold;
-
-            IReadOnlyList<Listing> listings;
-            try
+            while (!ct.IsCancellationRequested)
             {
-                listings = await client.SearchAsync(watch.Query, catalogIds, ct: ct);
-            }
-            catch (Exception e) when (e is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
-            {
-                Console.Error.WriteLine($"[error] Zapytanie \"{watch.Query}\" nie powiodło się: {e.Message}");
-                continue;
-            }
-
-            // Mediana liczona z tego, co widać teraz + historia z pliku stanu.
-            var market = listings.Select(l => l.Price).Concat(store.RecentPrices(watch.Query)).ToList();
-
-            foreach (var listing in listings)
-            {
-                if (store.IsKnown(listing.Id))
-                    continue;
-                var verdict = DealEvaluator.Evaluate(listing, watch.MaxPrice, market, discount);
-                store.Remember(listing.Id, new SeenItem
+                try
                 {
-                    Query = watch.Query,
-                    Title = listing.Title,
-                    Price = listing.Price,
-                    Currency = listing.Currency,
-                    Url = listing.Url,
-                    FirstSeenUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                    IsDeal = verdict.IsDeal,
-                });
-                // Pierwszy przebieg tylko zapełnia stan — wszystko byłoby "nowe",
-                // a mediana i tak dopiero się buduje.
-                if (verdict.IsDeal && !firstRun)
-                {
-                    dealsFound++;
-                    await notifier.SendAsync(Notifier.FormatDeal(listing, watch.Query, verdict.Reasons), ct);
+                    if (!engine.CycleInProgress) // /api/check mógł już odpalić cykl
+                        await engine.RunCycleAsync(ct);
                 }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception e)
+                {
+                    Console.Error.WriteLine($"[error] Przebieg zakończony błędem — próbuję dalej: {e.Message}");
+                }
+
+                var sleep = TimeSpan.FromSeconds(intervalSeconds + Random.Shared.NextDouble() * intervalSeconds * 0.2);
+                try { await Task.Delay(sleep, ct); }
+                catch (OperationCanceledException) { break; }
             }
-
-            Log(verbose, $"[{watch.Query}] ofert: {listings.Count}, nowych okazji dotąd: {dealsFound}");
-            await Task.Delay(TimeSpan.FromSeconds(1 + Random.Shared.NextDouble() * 2), ct);
         }
-
-        store.Save();
-    }
-
-    private static void Log(bool verbose, string message)
-    {
-        if (verbose)
-            Console.WriteLine($"{DateTime.Now:HH:mm:ss} {message}");
     }
 }

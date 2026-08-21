@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vinted Games Tracker</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --surface: #ffffff; --border: #e2e5ea;
+    --ink: #1a1d23; --ink-2: #4b5563; --ink-3: #8a919c;
+    --accent: #2563eb;
+    --strong-bg: #dcfce7; --strong-ink: #14532d;
+    --deal-bg: #dbeafe; --deal-ink: #1e3a8a;
+    --susp-bg: #fef3c7; --susp-ink: #78350f;
+    --err: #b91c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a; --surface: #1d2026; --border: #2e323a;
+      --ink: #e7e9ec; --ink-2: #aab1bb; --ink-3: #767e89;
+      --accent: #60a5fa;
+      --strong-bg: #143d24; --strong-ink: #86efac;
+      --deal-bg: #1e3356; --deal-ink: #93c5fd;
+      --susp-bg: #45350f; --susp-ink: #fcd34d;
+      --err: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 24px 20px 60px; }
+  header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 16px; margin: 28px 0 10px; }
+  .status { color: var(--ink-3); font-size: 13px; }
+  button {
+    font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--ink);
+    cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  table {
+    width: 100%; border-collapse: collapse; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    font-size: 14px;
+  }
+  th, td { text-align: left; padding: 8px 12px; border-top: 1px solid var(--border); }
+  thead th {
+    border-top: none; font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--ink-3); font-weight: 600; background: var(--surface);
+  }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .muted { color: var(--ink-3); }
+  .error { color: var(--err); font-size: 12px; }
+  input.price {
+    width: 80px; font: inherit; font-size: 13px; text-align: right; padding: 3px 6px;
+    border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--ink);
+  }
+  .table-scroll { overflow-x: auto; }
+  .badge {
+    display: inline-block; font-size: 11.5px; font-weight: 600; letter-spacing: .02em;
+    padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .badge.strong { background: var(--strong-bg); color: var(--strong-ink); }
+  .badge.deal { background: var(--deal-bg); color: var(--deal-ink); }
+  .badge.susp { background: var(--susp-bg); color: var(--susp-ink); }
+  .deals { display: grid; gap: 10px; }
+  .card {
+    display: flex; gap: 12px; padding: 12px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px;
+  }
+  .card img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; background: var(--bg); }
+  .card .noimg { width: 64px; height: 64px; border-radius: 8px; background: var(--bg);
+    display: flex; align-items: center; justify-content: center; color: var(--ink-3); font-size: 22px; }
+  .card .body { min-width: 0; flex: 1; }
+  .card .top { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .card a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .card a:hover { text-decoration: underline; }
+  .card .price { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .card .reasons { color: var(--ink-2); font-size: 13px; margin-top: 2px; }
+  .card .meta { color: var(--ink-3); font-size: 12px; margin-top: 2px; }
+  .addform { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .addform input {
+    font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--surface); color: var(--ink);
+  }
+  .filters { display: flex; gap: 8px; margin: 0 0 12px; flex-wrap: wrap; }
+  .filters button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .empty { color: var(--ink-3); padding: 20px; text-align: center; background: var(--surface);
+    border: 1px dashed var(--border); border-radius: 10px; }
+  td .del { border: none; background: none; color: var(--ink-3); font-size: 15px; padding: 2px 6px; }
+  td .del:hover { color: var(--err); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🎮 Vinted Games Tracker</h1>
+    <span class="status" id="status">Łączenie…</span>
+    <button class="primary" id="checkNow">Sprawdź teraz</button>
+  </header>
+
+  <h2>Okazje</h2>
+  <div class="filters" id="filters" role="group" aria-label="Filtr okazji">
+    <button data-f="all" aria-pressed="true">Wszystkie</button>
+    <button data-f="Strong" aria-pressed="false">🔥 Mocne</button>
+    <button data-f="Deal" aria-pressed="false">Okazje</button>
+    <button data-f="Suspicious" aria-pressed="false">⚠️ Podejrzane</button>
+  </div>
+  <div class="deals" id="deals"><div class="empty">Jeszcze nic — pierwszy przebieg buduje bazę cen.</div></div>
+
+  <h2>Śledzone gry</h2>
+  <div class="table-scroll">
+  <table>
+    <thead><tr>
+      <th>Gra</th><th>Zapytanie</th><th class="num">Krytycy</th>
+      <th class="num">Mediana rynku</th><th class="num">Próbka</th>
+      <th class="num">Twój próg</th><th>Ostatnio sprawdzone</th><th></th>
+    </tr></thead>
+    <tbody id="games"></tbody>
+  </table>
+  </div>
+  <form class="addform" id="addForm">
+    <input name="title" placeholder="Tytuł gry" required>
+    <input name="query" placeholder="fraza wyszukiwania" required>
+    <input name="criticScore" type="number" min="0" max="100" placeholder="krytycy" style="width:90px">
+    <input name="maxPrice" type="number" min="0" step="0.01" placeholder="próg zł" style="width:90px">
+    <button class="primary">Dodaj grę</button>
+  </form>
+</div>
+
+<script>
+const fmt = new Intl.NumberFormat('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const tierBadge = {
+  Strong: '<span class="badge strong">🔥 MOCNA OKAZJA</span>',
+  Deal: '<span class="badge deal">Okazja</span>',
+  Suspicious: '<span class="badge susp">⚠️ Podejrzanie tanio</span>',
+};
+let filter = 'all';
+let lastData = null;
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function ago(iso) {
+  if (!iso) return '—';
+  const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+  if (s < 90) return `${Math.round(s)} s temu`;
+  if (s < 5400) return `${Math.round(s / 60)} min temu`;
+  return `${Math.round(s / 3600)} godz. temu`;
+}
+
+function renderDeals(deals) {
+  const el = document.getElementById('deals');
+  const rows = deals.filter(d => filter === 'all' || d.tier === filter);
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty">Jeszcze nic — pierwszy przebieg buduje bazę cen.</div>';
+    return;
+  }
+  el.innerHTML = rows.map(d => `
+    <div class="card">
+      ${d.photoUrl ? `<img src="${esc(d.photoUrl)}" alt="" loading="lazy">` : '<div class="noimg">🎮</div>'}
+      <div class="body">
+        <div class="top">
+          ${tierBadge[d.tier] ?? ''}
+          <a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.title)}</a>
+          <span class="price">${fmt.format(d.price)} ${esc(d.currency)}</span>
+        </div>
+        <div class="reasons">${d.reasons.map(esc).join(' · ')}</div>
+        <div class="meta">${esc(d.query)} · score ${d.score} · ${ago(d.firstSeen)}</div>
+      </div>
+    </div>`).join('');
+}
+
+function renderGames(games) {
+  const tbody = document.getElementById('games');
+  tbody.innerHTML = games.map(g => `
+    <tr>
+      <td>${esc(g.title)}</td>
+      <td class="muted">${esc(g.query)}${g.lastError ? `<div class="error">⚠ ${esc(g.lastError)}</div>` : ''}</td>
+      <td class="num">${g.criticScore ?? '<span class="muted">—</span>'}</td>
+      <td class="num">${g.median != null ? fmt.format(g.median) : '<span class="muted">za mało danych</span>'}</td>
+      <td class="num muted">${g.sampleSize}</td>
+      <td class="num"><input class="price" type="number" min="0" step="0.01"
+        value="${g.maxPrice ?? ''}" placeholder="—" data-q="${esc(g.query)}"></td>
+      <td class="muted">${ago(g.lastChecked)}</td>
+      <td><button class="del" title="Usuń" data-q="${esc(g.query)}">✕</button></td>
+    </tr>`).join('');
+}
+
+async function refresh() {
+  try {
+    const r = await fetch('/api/overview');
+    lastData = await r.json();
+    renderGames(lastData.games);
+    renderDeals(lastData.deals);
+    const st = lastData.status;
+    document.getElementById('status').textContent = st.cycleInProgress
+      ? 'Sprawdzam oferty…'
+      : `Ostatni cykl: ${ago(st.lastCycleFinished)} · co ${st.pollIntervalSeconds} s · ${st.baseUrl.replace('https://', '')}`;
+  } catch {
+    document.getElementById('status').textContent = 'Brak połączenia z trackerem';
+  }
+}
+
+document.getElementById('filters').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  filter = b.dataset.f;
+  for (const x of e.currentTarget.querySelectorAll('button'))
+    x.setAttribute('aria-pressed', String(x === b));
+  if (lastData) renderDeals(lastData.deals);
+});
+
+document.getElementById('checkNow').addEventListener('click', async e => {
+  e.target.disabled = true;
+  await fetch('/api/check', { method: 'POST' });
+  setTimeout(() => { e.target.disabled = false; refresh(); }, 1500);
+});
+
+document.getElementById('games').addEventListener('change', async e => {
+  const input = e.target.closest('input.price'); if (!input) return;
+  const g = lastData.games.find(x => x.query === input.dataset.q); if (!g) return;
+  await fetch('/api/games', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: g.title, query: g.query, criticScore: g.criticScore,
+      maxPrice: input.value === '' ? null : Number(input.value) }),
+  });
+  refresh();
+});
+
+document.getElementById('games').addEventListener('click', async e => {
+  const b = e.target.closest('button.del'); if (!b) return;
+  if (!confirm(`Przestać śledzić "${b.dataset.q}"?`)) return;
+  await fetch('/api/games/' + encodeURIComponent(b.dataset.q), { method: 'DELETE' });
+  refresh();
+});
+
+document.getElementById('addForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  await fetch('/api/games', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: f.get('title'), query: f.get('query'),
+      criticScore: f.get('criticScore') ? Number(f.get('criticScore')) : null,
+      maxPrice: f.get('maxPrice') ? Number(f.get('maxPrice')) : null,
+    }),
+  });
+  e.target.reset();
+  refresh();
+});
+
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>
