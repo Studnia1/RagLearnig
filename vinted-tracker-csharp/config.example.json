@@ -5,12 +5,22 @@
   "defaults": {
     "baseUrl": "https://www.vinted.pl",
     "pollIntervalSeconds": 300,
-    "statePath": "data/state.json",
+    "statePath": "data/tracker.sqlite3",
     "watchlistPath": "games.json",
     "listenUrl": "http://localhost:5177",
-    // ID katalogu "Gry i konsole" różni się między domenami Vinted.
-    // Zostaw puste, by szukać po samej frazie, albo podaj ID podejrzane
-    // z adresu URL katalogu w przeglądarce (np. .../catalog/3025-gry).
-    "catalogIds": []
+
+    // ID katalogu "Gry" na danej domenie Vinted. Puste = tracker sam spróbuje
+    // znaleźć je w drzewie kategorii przy pierwszym cyklu; jeśli mu się nie
+    // uda, podejrzyj ID w URL katalogu w przeglądarce i wpisz tutaj.
+    "catalogIds": [],
+
+    // Pierwszy przebieg (pusta baza): ile stron po 96 ofert zassać na start.
+    "backfillPages": 20,
+    // Zwykły cykl: bezpiecznik stron po dłuższym postoju trackera.
+    "maxPagesPerCycle": 5,
+    // Push (Telegram/Discord) tylko gdy mediana - cena >= tyle (waluta rynku).
+    "minMargin": 50,
+    // Od ilu ofert grupa nierozpoznanych tytułów staje się grą "auto".
+    "autoPromoteMinSample": 8
   }
 }

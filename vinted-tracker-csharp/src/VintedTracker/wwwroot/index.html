@@ -123,7 +123,8 @@
     <thead><tr>
       <th>Gra</th><th>Zapytanie</th>
       <th class="num">Mediana rynku</th><th class="num">Próbka</th>
-      <th class="num">Twój próg</th><th>Ostatnio sprawdzone</th><th></th>
+      <th class="num">Widziane</th><th class="num">Okazje</th>
+      <th class="num">Twój próg</th><th></th>
     </tr></thead>
     <tbody id="games"></tbody>
   </table>
@@ -189,12 +190,13 @@ function renderGames(games) {
   tbody.innerHTML = games.map(g => `
     <tr>
       <td>${esc(g.title)}</td>
-      <td class="muted">${esc(g.query)}${g.lastError ? `<div class="error">⚠ ${esc(g.lastError)}</div>` : ''}</td>
+      <td class="muted">${esc(g.query)}</td>
       <td class="num">${g.median != null ? fmt.format(g.median) : '<span class="muted">za mało danych</span>'}</td>
       <td class="num muted">${g.sampleSize}</td>
+      <td class="num muted">${g.seenCount}</td>
+      <td class="num muted">${g.dealCount}</td>
       <td class="num"><input class="price" type="number" min="0" step="0.01"
         value="${g.maxPrice ?? ''}" placeholder="—" data-q="${esc(g.query)}"></td>
-      <td class="muted">${ago(g.lastChecked)}</td>
       <td><button class="del" title="Usuń" data-q="${esc(g.query)}">✕</button></td>
     </tr>`).join('');
 }
@@ -208,7 +210,11 @@ async function refresh() {
     const st = lastData.status;
     document.getElementById('status').textContent = st.cycleInProgress
       ? 'Sprawdzam oferty…'
-      : `Ostatni cykl: ${ago(st.lastCycleFinished)} · co ${st.pollIntervalSeconds} s · ${st.baseUrl.replace('https://', '')}`;
+      : st.lastError
+        ? `⚠ ${st.lastError}`
+        : `Ostatni cykl: ${ago(st.lastCycleFinished)} (+${st.lastCycleNewItems} ofert, ${st.lastCyclePages} str.) · ` +
+          `w bazie: ${st.itemsTotal} ofert, ${st.autoGames} gier auto · co ${st.pollIntervalSeconds} s · ` +
+          `${st.baseUrl.replace('https://', '')}${st.catalogInfo ? ' · katalog: ' + st.catalogInfo : ''}`;
   } catch {
     document.getElementById('status').textContent = 'Brak połączenia z trackerem';
   }
@@ -233,7 +239,7 @@ document.getElementById('games').addEventListener('change', async e => {
   const g = lastData.games.find(x => x.query === input.dataset.q); if (!g) return;
   await fetch('/api/games', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: g.title, query: g.query,
+    body: JSON.stringify({ title: g.title, query: g.query, aliases: g.aliases ?? null,
       maxPrice: input.value === '' ? null : Number(input.value) }),
   });
   refresh();

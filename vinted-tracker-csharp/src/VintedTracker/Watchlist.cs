@@ -8,7 +8,8 @@ public sealed class GameWatch
     [JsonPropertyName("title")] public required string Title { get; set; }
     [JsonPropertyName("query")] public required string Query { get; set; }
     [JsonPropertyName("maxPrice")] public decimal? MaxPrice { get; set; }
-    [JsonPropertyName("catalogIds")] public List<int>? CatalogIds { get; set; }
+    /// <summary>Dodatkowe frazy dopasowujące tę samą grę (np. skróty: "totk", "acnh").</summary>
+    [JsonPropertyName("aliases")] public List<string>? Aliases { get; set; }
 }
 
 /// <summary>

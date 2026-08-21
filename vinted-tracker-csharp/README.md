@@ -1,50 +1,45 @@
 # Vinted Games Tracker (C#)
 
-Śledzi nowo dodawane oferty gier na Vinted, ocenia je i pokazuje okazje
-w webowym dashboardzie. C#/.NET 8, aplikacja bez zewnętrznych zależności
-NuGet (tylko testy używają xunit).
+Śledzi **wszystkie** nowo dodawane oferty w kategorii gier na Vinted,
+rozpoznaje tytuły i platformy, buduje cennik rynkowy i alarmuje o okazjach
+z realną marżą — pod kupowanie gier tanio (dla siebie albo do odsprzedaży).
+C#/.NET 8; jedyna zależność aplikacji to Microsoft.Data.Sqlite.
 
 ![Dashboard](docs/dashboard.png)
 
-## Jak to działa
+## Architektura: firehose + watermark
 
-1. Pętla w tle co `pollIntervalSeconds` odpytuje nieoficjalne API katalogu
-   Vinted (`/api/v2/catalog/items`, to samo, z którego korzysta strona) dla
-   każdej gry z watchlisty (`games.json`), sortując od najnowszych. Klient
-   sam pobiera anonimowe ciasteczka sesji i odświeża je przy 401/403.
-2. Nowe oferty (niewidziane wcześniej ID) zapisuje w pliku stanu JSON.
-3. Każdą nową ofertę klasyfikuje (patrz „Definicja mocnej okazji” niżej).
-4. **Mocne okazje** wysyła push-em (Discord/Telegram, jeśli skonfigurowane);
-   wszystkie okazje i oferty podejrzane lądują w dashboardzie.
+Zamiast zapytania per gra tracker pobiera **jeden strumień najnowszych ofert
+z całej kategorii gier** i stronicuje tylko do miejsca, w którym zaczynają
+się oferty już widziane. Obciążenie nie zależy więc od liczby śledzonych
+gier — to zwykle **1–2 zapytania co cykl**, niezależnie czy śledzisz 16 gier
+czy cały rynek. Duży jest tylko pierwszy przebieg (backfill, domyślnie
+20 stron ≈ 2000 ofert), który buduje bazę cen i nie alertuje.
 
-Pierwszy przebieg tylko zapełnia stan (bez alertów), żeby nie zalać Cię
-wszystkim, co już wisi w katalogu.
+Każda nowa oferta przechodzi przez:
 
-## Definicja mocnej okazji
+1. **Filtr trafności** — etui, steelbooki, amiibo, "same kartony" odpadają
+   po słowach kluczowych i nie zaśmiecają cenników.
+2. **Normalizację tytułu** — małe litery, bez diakrytyków i interpunkcji,
+   bez słów-szumu ("NOWA", "folia", "stan idealny"); kolejność słów bez
+   znaczenia. **Platforma wykrywana osobno** (Switch/PS4/PS5/Xbox…), bo ta
+   sama gra na różnych platformach ma różne ceny.
+3. **Dopasowanie do gry** — najpierw watchlista (`games.json`; pewne
+   dopasowanie wszystkich tokenów zapytania lub aliasu; niejednoznaczność,
+   np. bundle "Sword + Shield", nie alertuje). Nierozpoznane oferty grupują
+   się po znormalizowanym tytule i platformie — gdy grupa urośnie do
+   `autoPromoteMinSample` ofert, staje się grą **auto** i od tej pory też ma
+   medianę i może alertować. Słownik rośnie więc sam z rynkiem.
+4. **Ocenę okazji** — jak wcześniej: przycięta mediana (min 5 próbek),
+   mocna okazja = dwa niezależne sygnały (≤60% mediany **i** dolny kwartyl,
+   albo ≤85% ręcznego progu), zwykła ≤75% mediany, ≤30% mediany =
+   „podejrzanie tanio" (scam-bezpiecznik).
+5. **Bramkę marży** — push (Telegram/Discord) idzie tylko dla mocnych okazji
+   z marżą `mediana − cena ≥ minMargin` (domyślnie **50 zł**), żeby alerty
+   były warte odbioru z telefonu. Wszystko i tak ląduje w dashboardzie.
 
-Pojedynczy sygnał cenowy kłamie, więc ocena jest wielowarstwowa:
-
-1. **Filtr trafności.** Wyniki wyszukiwania są pełne akcesoriów — etui,
-   steelbooki, amiibo, poradniki, *same kartony* — które są tanie, bo nie są
-   grą. Odrzucamy je po słowach kluczowych, zanim policzymy cokolwiek
-   (lista w `DealEvaluator.AccessoryKeywords`).
-2. **Odporna cena odniesienia.** Mediana z próbki przyciętej o 10% z każdej
-   strony (odporna na bundle za 400 zł i wraki za 20 zł), liczona dopiero od
-   5 ofert. Próbka = bieżące wyniki + historia z ostatnich 30 dni.
-3. **Mocna okazja wymaga dwóch niezależnych sygnałów:**
-   - cena ≤ **60% mediany** *i jednocześnie* w **dolnym kwartylu** próbki, albo
-   - cena z wyraźnym zapasem (≤ **85%**) poniżej Twojego ręcznego progu
-     `maxPrice` dla tej gry.
-4. **Zwykła okazja:** cena ≤ 75% mediany albo ≤ `maxPrice`.
-5. **Bezpiecznik too-good-to-be-true.** Cena ≤ **30% mediany** to częściej
-   scam, uszkodzona płytka albo „samo pudełko” niż okazja — taka oferta
-   dostaje status *Podejrzanie tanio* zamiast alertu.
-
-Wynik (score) okazji to procent rabatu względem najlepszego odniesienia —
-służy do sortowania alertów.
-
-Progi (`StrongRatio`, `DealRatio`, `SuspiciousRatio`, …) są stałymi
-w `DealEvaluator` — łatwo je przestroić.
+Stan mieszka w SQLite (`data/tracker.sqlite3`) — baza rośnie z rynkiem
+i przeżywa restarty (backfill nie powtarza się).
 
 ## Wymagania
 
@@ -59,30 +54,48 @@ dotnet run --project src/VintedTracker
 ```
 
 Konfiguracja jest opcjonalna — bez `config.json` działają wartości domyślne
-(rynek `vinted.pl`, cykl co 5 min, port 5177). Żeby coś zmienić:
+(vinted.pl, cykl co 5 min, marża 50 zł, port 5177). Żeby coś zmienić:
 `cp config.example.json config.json` i edytuj.
+
+ID katalogu gier tracker próbuje wykryć sam z drzewa kategorii Vinted;
+jeśli mu się nie uda (zobaczysz błąd w pasku statusu), podejrzyj ID w URL
+katalogu w przeglądarce (np. `.../catalog/3025-gry`) i wpisz w `catalogIds`.
 
 Tryb jednorazowy bez UI (np. pod crona): `dotnet run --project src/VintedTracker -- --once`.
 
-Powiadomienia push (opcjonalne) konfigurują zmienne środowiskowe:
+## Alerty na Telegram (zalecane przy flippingu)
+
+1. Napisz do [@BotFather](https://t.me/BotFather) → `/newbot` → dostajesz
+   **token** (`123456:ABC...`).
+2. Napisz cokolwiek do swojego nowego bota (musi móc Ci odpisywać).
+3. Wejdź na `https://api.telegram.org/bot<TOKEN>/getUpdates` — w odpowiedzi
+   znajdziesz `"chat":{"id":123456789}` — to Twój **chat id**.
+4. Przed startem trackera:
 
 ```bash
-export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/..."
 export TELEGRAM_BOT_TOKEN="123456:ABC..."
 export TELEGRAM_CHAT_ID="123456789"
 ```
 
+Analogicznie działa `DISCORD_WEBHOOK_URL` (webhook kanału).
+
 ## Dashboard
 
-- **Okazje** — kanał z kartami (🔥 mocna / okazja / ⚠️ podejrzanie tanio),
-  filtrowanie po typie, link do oferty, powody klasyfikacji, score.
-- **Śledzone gry** — mediana rynkowa i wielkość próbki na żywo, edycja
-  progu `maxPrice` wprost w tabeli, dodawanie i usuwanie gier, błędy
-  pobierania per gra.
-- **Sprawdź teraz** — ręczne wywołanie cyklu poza harmonogramem.
+- **Pasek statusu** — ostatni cykl, ile nowych ofert i stron, rozmiar bazy,
+  liczba gier auto, wykryty katalog, ewentualne błędy pobierania.
+- **Okazje** — karty z całego rynku (watchlista + gry auto): odznaka
+  🔥 mocna / okazja / ⚠️ podejrzanie tanio, różnica cenowa w zł, powody,
+  link do oferty, filtry.
+- **Śledzone gry** — mediana rynkowa, próbka, liczba widzianych ofert
+  i okazji, edycja progu `maxPrice` w tabeli, dodawanie/usuwanie gier.
+- **Sprawdź teraz** — ręczne wywołanie cyklu.
 
-Watchlista mieszka w `games.json` (edytowalna też ręcznie); w repo jest
-wypełniona grami Nintendo Switch.
+Watchlista (`games.json`) wspiera aliasy dopasowania, np.:
+
+```json
+{ "title": "Zelda: Tears of the Kingdom", "query": "zelda tears of the kingdom switch",
+  "aliases": ["zelda totk"], "maxPrice": 150 }
+```
 
 ## Testy
 
@@ -92,11 +105,11 @@ dotnet test
 
 ## Zastrzeżenia
 
-- To **nieoficjalne** API — Vinted może je zmienić lub ograniczać zbyt częste
-  zapytania. Tracker odświeża anonimową sesję przy 401/403 i losowo rozciąga
-  odstępy, ale używaj rozsądnych interwałów i tylko do użytku osobistego.
-- Mediana rynkowa jest tym lepsza, im dłużej tracker działa i im
-  precyzyjniejsze jest zapytanie (np. `"mario kart 8 deluxe switch"` zamiast
-  `"mario"`).
+- To **nieoficjalne** API — Vinted może je zmienić lub ograniczać zbyt
+  częste zapytania. Tracker odświeża anonimową sesję przy 401/403, rozciąga
+  odstępy losowo i stronicuje oszczędnie; używaj rozsądnych interwałów
+  i tylko do użytku osobistego.
+- Mediany są tym lepsze, im dłużej tracker działa; gry auto potrzebują
+  `autoPromoteMinSample` ofert, zanim zaczną alertować.
 - Dashboard nie ma logowania — słuchaj na `localhost` (domyślnie) albo
   zabezpiecz go samodzielnie, zanim wystawisz na zewnątrz.

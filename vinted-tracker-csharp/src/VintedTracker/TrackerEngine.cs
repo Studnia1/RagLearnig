@@ -1,49 +1,84 @@
-using System.Collections.Concurrent;
-
 namespace VintedTracker;
 
-public sealed class GameStats
-{
-    public required string Query { get; init; }
-    public decimal? Median { get; set; }
-    public int SampleSize { get; set; }
-    public int ListingsLastCycle { get; set; }
-    public DateTimeOffset? LastChecked { get; set; }
-    public string? LastError { get; set; }
-}
-
 /// <summary>
-/// Jeden cykl trackera: dla każdej gry z watchlisty pobiera najnowsze oferty,
-/// ocenia nowe i zapisuje wynik. Współdzielony przez pętlę w tle i tryb --once.
+/// Silnik w trybie firehose: zamiast zapytania per gra pobiera jeden strumień
+/// najnowszych ofert z całej kategorii gier i stronicuje tylko do miejsca,
+/// w którym zaczynają się oferty już widziane (watermark). Obciążenie nie
+/// zależy więc od liczby śledzonych gier, tylko od tempa nowych ofert —
+/// zwykle 1-2 strony na cykl. Duży jest tylko pierwszy przebieg (backfill),
+/// który buduje bazę cen i nie alertuje.
 /// </summary>
 public sealed class TrackerEngine(
     Config config,
     VintedClient client,
-    StateStore store,
+    SqliteStore store,
     WatchlistStore watchlist,
     Notifier notifier)
 {
-    private readonly ConcurrentDictionary<string, GameStats> _stats = new();
-    private bool _firstRun = true;
-
     public DateTimeOffset? LastCycleFinished { get; private set; }
     public bool CycleInProgress { get; private set; }
-
-    public IReadOnlyDictionary<string, GameStats> Stats => _stats;
+    public int LastCyclePages { get; private set; }
+    public int LastCycleNewItems { get; private set; }
+    public string? LastError { get; private set; }
+    public string? CatalogInfo { get; private set; }
 
     public async Task RunCycleAsync(CancellationToken ct)
     {
         CycleInProgress = true;
         try
         {
-            foreach (var game in watchlist.Snapshot())
+            var catalogIds = await EnsureCatalogAsync(ct);
+            if (catalogIds.Count == 0)
+                return; // LastError ustawione w EnsureCatalogAsync
+
+            // Backfill rozpoznajemy po pustej bazie — przeżywa restart procesu.
+            var firstRun = store.ItemCount() == 0;
+            var maxPages = firstRun ? config.Defaults.BackfillPages : config.Defaults.MaxPagesPerCycle;
+            var matcher = new GameMatcher(watchlist.Snapshot().Select(GamePattern.FromWatch).ToList());
+            var autoIndex = store.AutoGameIndex();
+
+            var pages = 0;
+            var newItems = 0;
+            for (var page = 1; page <= maxPages; page++)
             {
                 ct.ThrowIfCancellationRequested();
-                await CheckGameAsync(game, ct);
-                await Task.Delay(TimeSpan.FromSeconds(1 + Random.Shared.NextDouble() * 2), ct);
+                IReadOnlyList<Listing> listings;
+                try
+                {
+                    listings = await client.CatalogPageAsync(catalogIds, page, ct: ct);
+                }
+                catch (Exception e) when (e is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+                {
+                    LastError = e.Message;
+                    Console.Error.WriteLine($"[error] Strona {page} katalogu nie powiodła się: {e.Message}");
+                    break;
+                }
+
+                pages++;
+                var pageNew = 0;
+                foreach (var listing in listings)
+                {
+                    if (store.IsKnown(listing.Id))
+                        continue;
+                    pageNew++;
+                    await ProcessListingAsync(listing, matcher, autoIndex, firstRun, ct);
+                }
+                newItems += pageNew;
+                LastError = null;
+
+                // Watermark: strona bez żadnej nowej oferty = dotarliśmy do
+                // miejsca, które znamy. Pusta strona = koniec katalogu.
+                if (pageNew == 0 || listings.Count == 0)
+                    break;
+                await Task.Delay(TimeSpan.FromSeconds(1.5 + Random.Shared.NextDouble() * 1.5), ct);
             }
-            store.Save();
-            _firstRun = false;
+
+            var promoted = store.PromoteAutoGames(config.Defaults.AutoPromoteMinSample);
+            if (promoted > 0)
+                Console.WriteLine($"[info] Auto-promocja: {promoted} nowych grup gier w słowniku");
+
+            LastCyclePages = pages;
+            LastCycleNewItems = newItems;
             LastCycleFinished = DateTimeOffset.UtcNow;
         }
         finally
@@ -52,61 +87,83 @@ public sealed class TrackerEngine(
         }
     }
 
-    private async Task CheckGameAsync(GameWatch game, CancellationToken ct)
+    private async Task ProcessListingAsync(
+        Listing listing,
+        GameMatcher matcher,
+        Dictionary<(string, string), (string Key, string Title)> autoIndex,
+        bool firstRun,
+        CancellationToken ct)
     {
-        var stats = _stats.GetOrAdd(game.Query, q => new GameStats { Query = q });
-        var catalogIds = game.CatalogIds is { Count: > 0 } ids ? ids : config.Defaults.CatalogIds;
+        var relevant = DealEvaluator.IsRelevant(listing.Title);
+        var normKey = TitleNormalizer.NormKey(listing.Title);
+        var platform = TitleNormalizer.DetectPlatform(listing.Title);
 
-        IReadOnlyList<Listing> listings;
+        string? gameKey = null;
+        string? gameTitle = null;
+        decimal? maxPrice = null;
+        if (relevant && normKey.Length > 0)
+        {
+            if (matcher.Match(listing.Title, platform) is { } watch)
+            {
+                gameKey = watch.Key;
+                gameTitle = watch.Title;
+                maxPrice = watch.MaxPrice;
+            }
+            else if (autoIndex.TryGetValue((normKey, platform ?? ""), out var auto))
+            {
+                gameKey = auto.Key;
+                gameTitle = auto.Title;
+            }
+        }
+
+        var verdict = gameKey is not null
+            ? DealEvaluator.Evaluate(listing, maxPrice, store.PricesFor(gameKey))
+            : new DealVerdict(DealTier.None, 0, []);
+        if (firstRun && verdict.Tier != DealTier.Suspicious)
+            verdict = verdict with { Tier = DealTier.None }; // backfill nie alertuje
+
+        store.Insert(new ItemRecord(
+            listing.Id, listing.Title, listing.Price, listing.Currency, listing.Url,
+            listing.PhotoUrl, normKey, platform, gameKey, gameTitle, relevant,
+            verdict.Tier, verdict.Score, verdict.ReferencePrice, verdict.Reasons));
+
+        // Push tylko dla mocnych okazji z realną marżą — reszta ląduje w UI.
+        var margin = verdict.ReferencePrice is { } r ? r - listing.Price : 0;
+        if (!firstRun && verdict.Tier == DealTier.Strong && margin >= config.Defaults.MinMargin)
+            await notifier.SendAsync(Notifier.FormatDeal(listing, gameTitle ?? "?", verdict), ct);
+    }
+
+    private async Task<IReadOnlyList<int>> EnsureCatalogAsync(CancellationToken ct)
+    {
+        if (config.Defaults.CatalogIds.Count > 0)
+        {
+            CatalogInfo = $"z konfiguracji: {string.Join(",", config.Defaults.CatalogIds)}";
+            return config.Defaults.CatalogIds;
+        }
+
+        if (store.GetMeta("catalog_id") is { } saved && int.TryParse(saved, out var savedId))
+        {
+            CatalogInfo = $"{store.GetMeta("catalog_title")} (#{savedId})";
+            return [savedId];
+        }
+
         try
         {
-            listings = await client.SearchAsync(game.Query, catalogIds, ct: ct);
-            stats.LastError = null;
+            if (await client.DiscoverGamesCatalogAsync(ct) is { } found)
+            {
+                store.SetMeta("catalog_id", found.Id.ToString());
+                store.SetMeta("catalog_title", found.Title);
+                CatalogInfo = $"{found.Title} (#{found.Id})";
+                Console.WriteLine($"[info] Wykryto katalog gier: {found.Title} (#{found.Id})");
+                return [found.Id];
+            }
+            LastError = "Nie znalazłem katalogu gier w drzewie kategorii — podaj catalogIds w config.json";
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
         {
-            stats.LastError = e.Message;
-            Console.Error.WriteLine($"[error] Zapytanie \"{game.Query}\" nie powiodło się: {e.Message}");
-            return;
+            LastError = $"Auto-wykrycie katalogu nie powiodło się: {e.Message}";
         }
-
-        // Mediana liczona tylko z ofert wyglądających na grę (bieżące + historia).
-        var market = listings
-            .Where(l => DealEvaluator.IsRelevant(l.Title))
-            .Select(l => l.Price)
-            .Concat(store.RecentPrices(game.Query))
-            .ToList();
-
-        var sane = market.Where(p => p >= DealEvaluator.MinSanePrice).ToList();
-        stats.SampleSize = sane.Count;
-        stats.Median = sane.Count >= DealEvaluator.MinSample ? DealEvaluator.TrimmedMedian(sane) : null;
-        stats.ListingsLastCycle = listings.Count;
-        stats.LastChecked = DateTimeOffset.UtcNow;
-
-        foreach (var listing in listings)
-        {
-            if (store.IsKnown(listing.Id))
-                continue;
-            var verdict = DealEvaluator.Evaluate(listing, game.MaxPrice, market);
-            store.Remember(listing.Id, new SeenItem
-            {
-                Query = game.Query,
-                Title = listing.Title,
-                Price = listing.Price,
-                Currency = listing.Currency,
-                Url = listing.Url,
-                FirstSeenUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                Tier = _firstRun ? DealTier.None : verdict.Tier,
-                Score = verdict.Score,
-                ReferencePrice = verdict.ReferencePrice,
-                Reasons = verdict.Reasons.ToList(),
-                PhotoUrl = listing.PhotoUrl,
-            });
-            // Pierwszy przebieg tylko zapełnia stan — wszystko byłoby "nowe",
-            // a mediana i tak dopiero się buduje. Push tylko dla mocnych okazji;
-            // zwykłe i podejrzane lądują w UI.
-            if (!_firstRun && verdict.Tier == DealTier.Strong)
-                await notifier.SendAsync(Notifier.FormatDeal(listing, game.Title, verdict), ct);
-        }
+        Console.Error.WriteLine($"[error] {LastError}");
+        return [];
     }
 }

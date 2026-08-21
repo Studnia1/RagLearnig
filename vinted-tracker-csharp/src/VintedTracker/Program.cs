@@ -37,7 +37,7 @@ public static class Program
 
         var config = File.Exists(configPath) ? Config.Load(configPath) : new Config();
         var client = new VintedClient(config.Defaults.BaseUrl);
-        var store = new StateStore(config.Defaults.StatePath);
+        using var store = new SqliteStore(config.Defaults.StatePath);
         var watchlist = new WatchlistStore(config.Defaults.WatchlistPath);
         var notifier = new Notifier();
         var engine = new TrackerEngine(config, client, store, watchlist, notifier);
@@ -69,33 +69,33 @@ public static class Program
         {
             var games = watchlist.Snapshot().Select(g =>
             {
-                var stats = engine.Stats.GetValueOrDefault(g.Query);
+                var stats = store.StatsFor("watch:" + g.Query.ToLowerInvariant());
                 return new
                 {
                     g.Title,
                     g.Query,
                     g.MaxPrice,
-                    Median = stats?.Median,
-                    SampleSize = stats?.SampleSize ?? 0,
-                    LastChecked = stats?.LastChecked,
-                    LastError = stats?.LastError,
-                    SeenCount = store.CountForQuery(g.Query),
+                    g.Aliases,
+                    stats.Median,
+                    SampleSize = stats.Sample,
+                    SeenCount = stats.Seen,
+                    DealCount = stats.Deals,
                 };
             });
-            var deals = store.RecentDeals(150).Select(kv => new
+            var deals = store.RecentDeals(150).Select(d => new
             {
-                Id = kv.Key,
-                kv.Value.Query,
-                kv.Value.Title,
-                kv.Value.Price,
-                kv.Value.Currency,
-                kv.Value.Url,
-                kv.Value.PhotoUrl,
-                Tier = kv.Value.Tier.ToString(),
-                kv.Value.Score,
-                kv.Value.ReferencePrice,
-                kv.Value.Reasons,
-                FirstSeen = DateTimeOffset.FromUnixTimeSeconds(kv.Value.FirstSeenUnix),
+                d.Id,
+                Query = d.Game,
+                d.Title,
+                d.Price,
+                d.Currency,
+                d.Url,
+                d.PhotoUrl,
+                d.Tier,
+                d.Score,
+                d.ReferencePrice,
+                d.Reasons,
+                FirstSeen = DateTimeOffset.FromUnixTimeSeconds(d.FirstSeenUnix),
             });
             return Results.Ok(new
             {
@@ -107,6 +107,13 @@ public static class Program
                     engine.LastCycleFinished,
                     PollIntervalSeconds = config.Defaults.PollIntervalSeconds,
                     config.Defaults.BaseUrl,
+                    engine.LastCyclePages,
+                    engine.LastCycleNewItems,
+                    engine.LastError,
+                    engine.CatalogInfo,
+                    ItemsTotal = store.ItemCount(),
+                    AutoGames = store.AutoGameCount(),
+                    config.Defaults.MinMargin,
                 },
             });
         });
@@ -132,7 +139,6 @@ public static class Program
 
         Console.WriteLine($"Dashboard: {config.Defaults.ListenUrl}");
         await app.RunAsync();
-        store.Save();
         return 0;
     }
 
