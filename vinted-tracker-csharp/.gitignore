@@ -1,0 +1,5 @@
+bin/
+obj/
+data/
+config.json
+.env
