@@ -100,7 +100,7 @@ public sealed class TrackerEngine(
         {
             var matcher = new GameMatcher(watchlist.Snapshot().Select(GamePattern.FromWatch).ToList());
             var blocklist = store.GetBlocklist();
-            var misses = 0;
+            var misses = new List<string>();
             foreach (var game in watchlist.Snapshot())
             {
                 ct.ThrowIfCancellationRequested();
@@ -147,14 +147,16 @@ public sealed class TrackerEngine(
                         Bargain: median is { } m && cheapest.Price <= m * DealEvaluator.DealRatio,
                         Median: median);
                 else
-                    misses++;
+                    misses.Add(game.Title);
 
                 await Task.Delay(TimeSpan.FromSeconds(1 + Random.Shared.NextDouble() * 1.5), ct);
             }
             store.SetMeta("cheapest_at", DateTimeOffset.UtcNow.ToString("O"));
             PersistCheapest();
+            var missSample = string.Join(", ", misses.Take(15));
             Log.Info($"Skan najtańszych zakończony: wyniki dla {Cheapest.Count} gier, " +
-                     $"bez wiarygodnej oferty: {misses}");
+                     $"bez wiarygodnej oferty: {misses.Count}" +
+                     (misses.Count > 0 ? $" ({missSample}{(misses.Count > 15 ? ", …" : "")})" : ""));
         }
         finally
         {

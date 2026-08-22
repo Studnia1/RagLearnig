@@ -192,7 +192,7 @@ public static class Program
                 $"=== Vinted Games Tracker — diagnostyka {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n" +
                 $"baza: {store.ItemCount()} ofert, gier auto: {store.AutoGameCount()}, " +
                 $"watchlista: {watchlist.Snapshot().Count}, gruz-lista: [{string.Join(", ", store.GetBlocklist())}]\n" +
-                $"katalog: {engine.CatalogInfo ?? "?"} · ostatni cykl: {engine.LastCycleFinished:HH:mm:ss} " +
+                $"katalog: {engine.CatalogInfo ?? "?"} · ostatni cykl: {engine.LastCycleFinished?.ToLocalTime():HH:mm:ss} " +
                 $"({engine.LastCyclePages} str., +{engine.LastCycleNewItems})" +
                 $"{(engine.LastError is not null ? $" · błąd: {engine.LastError}" : "")}\n" +
                 "=== Logi (ostatnie linie) ===\n";
