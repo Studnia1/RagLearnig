@@ -4,9 +4,11 @@ namespace VintedTracker;
 
 /// <summary>Aktualnie najtańsza wiarygodna oferta śledzonej gry (skan na żądanie).
 /// <paramref name="Bargain"/> = cena ≤ 75% mediany, czyli realna okazja.</summary>
+/// <param name="Live">true = potwierdzone skanem na żywo; false = przybliżenie
+/// z bazy (oferta mogła się już sprzedać).</param>
 public sealed record CheapestNow(
     string ListingTitle, decimal Price, string Currency, string Url,
-    DateTimeOffset CheckedAt, bool Bargain, decimal? Median);
+    DateTimeOffset CheckedAt, bool Bargain, decimal? Median, bool Live = true);
 
 /// <summary>
 /// Silnik w trybie firehose: zamiast zapytania per gra pobiera jeden strumień
@@ -53,6 +55,15 @@ public sealed class TrackerEngine(
     private void PersistCheapest() =>
         store.SetMeta("cheapest", System.Text.Json.JsonSerializer.Serialize(Cheapest.ToDictionary()));
 
+    private bool CheapestScanIsDue()
+    {
+        if (store.GetMeta("cheapest_at") is not { } raw)
+            return true;
+        return !DateTimeOffset.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
+                   System.Globalization.DateTimeStyles.RoundtripKind, out var last)
+               || DateTimeOffset.UtcNow - last > TimeSpan.FromHours(24);
+    }
+
     private void RunSweepIfNeeded(GameMatcher matcher)
     {
         if (store.GetMeta("filter_version") == FilterVersion)
@@ -89,14 +100,28 @@ public sealed class TrackerEngine(
         {
             var matcher = new GameMatcher(watchlist.Snapshot().Select(GamePattern.FromWatch).ToList());
             var blocklist = store.GetBlocklist();
+            var misses = 0;
             foreach (var game in watchlist.Snapshot())
             {
                 ct.ThrowIfCancellationRequested();
+
+                // Próg wiarygodności idzie już do wyszukiwarki (price_from):
+                // dla popularnych tytułów 48 najtańszych wyników to w całości
+                // naklejki i karty za grosze — bez tego prawdziwa gra nie
+                // mieściła się w pobranej stronie.
+                var gameKey = "watch:" + game.Query.ToLowerInvariant();
+                var prices = store.PricesFor(gameKey);
+                var floor = DealEvaluator.CredibleFloor(prices);
+                var sane = prices.Where(p => p >= DealEvaluator.MinSanePrice).ToList();
+                decimal? median = sane.Count >= DealEvaluator.MinSample
+                    ? DealEvaluator.TrimmedMedian(sane) : null;
+
                 IReadOnlyList<Listing> listings;
                 try
                 {
                     listings = await client.SearchAsync(
-                        game.Query, order: "price_low_to_high", perPage: 48, ct: ct);
+                        game.Query, order: "price_low_to_high", perPage: 48,
+                        priceFrom: floor > DealEvaluator.MinSanePrice ? floor : null, ct: ct);
                 }
                 catch (VintedBlockedException e)
                 {
@@ -111,16 +136,6 @@ public sealed class TrackerEngine(
                     continue;
                 }
 
-                var gameKey = "watch:" + game.Query.ToLowerInvariant();
-                // Ten sam bezpiecznik co w silniku okazji: ceny poniżej 30%
-                // mediany to strefa scam/sam karton — pomijamy je, zamiast
-                // pokazywać jako "najtańsze".
-                var prices = store.PricesFor(gameKey);
-                var floor = DealEvaluator.CredibleFloor(prices);
-                var sane = prices.Where(p => p >= DealEvaluator.MinSanePrice).ToList();
-                decimal? median = sane.Count >= DealEvaluator.MinSample
-                    ? DealEvaluator.TrimmedMedian(sane) : null;
-
                 var cheapest = listings.FirstOrDefault(l =>
                     l.Price >= floor
                     && DealEvaluator.IsRelevant(l.Title, blocklist)
@@ -131,11 +146,15 @@ public sealed class TrackerEngine(
                         DateTimeOffset.UtcNow,
                         Bargain: median is { } m && cheapest.Price <= m * DealEvaluator.DealRatio,
                         Median: median);
+                else
+                    misses++;
 
                 await Task.Delay(TimeSpan.FromSeconds(1 + Random.Shared.NextDouble() * 1.5), ct);
             }
+            store.SetMeta("cheapest_at", DateTimeOffset.UtcNow.ToString("O"));
             PersistCheapest();
-            Log.Info($"Skan najtańszych zakończony: wyniki dla {Cheapest.Count} gier");
+            Log.Info($"Skan najtańszych zakończony: wyniki dla {Cheapest.Count} gier, " +
+                     $"bez wiarygodnej oferty: {misses}");
         }
         finally
         {
@@ -229,6 +248,14 @@ public sealed class TrackerEngine(
             Log.Info($"Cykl: {pages} str., {newItems} nowych (gruz {_cJunk}, watchlista {_cWatch}, " +
                      $"auto {_cAuto}); okazje: {_cStrong} mocnych, {_cDeal} zwykłych, {_cSusp} podejrzanych; " +
                      $"baza {store.ItemCount()}");
+
+            // Raz na dobę odświeżamy "najtańsze teraz" automatycznie — kolumna
+            // żyje bez klikania, a przycisk zostaje do odświeżenia na żądanie.
+            if (!LastCycleBlocked && !firstRun && CheapestScanIsDue())
+            {
+                Log.Info("Automatyczny dzienny skan najtańszych…");
+                await ScanCheapestAsync(ct);
+            }
         }
         finally
         {

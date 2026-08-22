@@ -85,8 +85,18 @@ public static class Program
         {
             var games = watchlist.Snapshot().Select(g =>
             {
-                var stats = store.StatsFor("watch:" + g.Query.ToLowerInvariant());
+                var gameKey = "watch:" + g.Query.ToLowerInvariant();
+                var stats = store.StatsFor(gameKey);
                 var cheapest = engine.Cheapest.GetValueOrDefault(g.Query);
+                // Bez wyniku skanu na żywo kolumnę wypełnia darmowe przybliżenie
+                // z firehose'a: najtańsza wiarygodna oferta widziana w 7 dni.
+                if (cheapest is null && stats.Median is { } med
+                    && store.CheapestSeen(gameKey, med * DealEvaluator.SuspiciousRatio) is { } seen)
+                    cheapest = new CheapestNow(
+                        seen.Title, seen.Price, seen.Currency, seen.Url,
+                        DateTimeOffset.FromUnixTimeSeconds(seen.FirstSeenUnix),
+                        Bargain: seen.Price <= med * DealEvaluator.DealRatio,
+                        Median: med, Live: false);
                 return new
                 {
                     g.Title,

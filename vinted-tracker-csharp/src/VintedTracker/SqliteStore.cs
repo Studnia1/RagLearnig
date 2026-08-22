@@ -165,6 +165,34 @@ public sealed class SqliteStore : IDisposable
         }
     }
 
+    public sealed record CheapestSeenRow(string Title, decimal Price, string Currency, string Url, long FirstSeenUnix);
+
+    /// <summary>Najtańsza wiarygodna oferta gry widziana w ostatnich dniach —
+    /// darmowe przybliżenie "najtańszej teraz" z danych firehose'a (oferta
+    /// mogła się już sprzedać; skan na żywo to weryfikuje).</summary>
+    public CheapestSeenRow? CheapestSeen(string gameKey, decimal minPrice, int maxAgeDays = 7)
+    {
+        var cutoff = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - (long)maxAgeDays * 86400;
+        lock (_lock)
+        {
+            using var cmd = _conn.CreateCommand();
+            cmd.CommandText = """
+                SELECT title, price, currency, url, first_seen FROM items
+                WHERE game_key = $g AND relevant = 1 AND first_seen >= $cutoff AND price >= $min
+                ORDER BY price ASC LIMIT 1
+                """;
+            cmd.Parameters.AddWithValue("$g", gameKey);
+            cmd.Parameters.AddWithValue("$cutoff", cutoff);
+            cmd.Parameters.AddWithValue("$min", (double)minPrice);
+            using var reader = cmd.ExecuteReader();
+            if (!reader.Read())
+                return null;
+            return new CheapestSeenRow(
+                reader.GetString(0), (decimal)reader.GetDouble(1), reader.GetString(2),
+                reader.GetString(3), reader.GetInt64(4));
+        }
+    }
+
     public GameStatsRow StatsFor(string gameKey, int maxAgeDays = 30)
     {
         var prices = PricesFor(gameKey, maxAgeDays);

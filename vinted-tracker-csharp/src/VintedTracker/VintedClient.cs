@@ -81,6 +81,7 @@ public sealed class VintedClient
         int perPage = 96,
         int page = 1,
         string order = "newest_first",
+        decimal? priceFrom = null,
         CancellationToken ct = default)
     {
         var query = HttpUtility.ParseQueryString(string.Empty);
@@ -90,6 +91,8 @@ public sealed class VintedClient
         query["page"] = page.ToString();
         if (catalogIds is { Count: > 0 })
             query["catalog_ids"] = string.Join(",", catalogIds);
+        if (priceFrom is { } from)
+            query["price_from"] = from.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
         return FetchItemsAsync(query.ToString()!, ct);
     }
 

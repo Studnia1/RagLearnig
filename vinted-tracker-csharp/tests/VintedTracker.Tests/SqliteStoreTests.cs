@@ -85,6 +85,17 @@ public class SqliteStoreTests : IDisposable
     }
 
     [Fact]
+    public void CheapestSeenRespectsFloorAndPicksLowest()
+    {
+        _store.Insert(Item(1, 200));
+        _store.Insert(Item(2, 120));
+        _store.Insert(Item(3, 30));   // poniżej progu wiarygodności
+        var row = _store.CheapestSeen("watch:pokemon sword", minPrice: 60);
+        Assert.NotNull(row);
+        Assert.Equal(120m, row!.Price);
+    }
+
+    [Fact]
     public void MetaRoundtrip()
     {
         Assert.Null(_store.GetMeta("catalog_id"));
