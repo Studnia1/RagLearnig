@@ -1,4 +1,11 @@
+using System.Collections.Concurrent;
+
 namespace VintedTracker;
+
+/// <summary>Aktualnie najtańsza sensowna oferta śledzonej gry (skan na żądanie).</summary>
+public sealed record CheapestNow(
+    string ListingTitle, decimal Price, string Currency, string Url,
+    DateTimeOffset CheckedAt);
 
 /// <summary>
 /// Silnik w trybie firehose: zamiast zapytania per gra pobiera jeden strumień
@@ -19,6 +26,64 @@ public sealed class TrackerEngine(
     public bool CycleInProgress { get; private set; }
     /// <summary>Ostatni cykl zakończył się blokadą anty-bot — pętla wydłuża odstępy.</summary>
     public bool LastCycleBlocked { get; private set; }
+
+    /// <summary>Wyniki skanu "najtańsze teraz" per zapytanie watchlisty.</summary>
+    public ConcurrentDictionary<string, CheapestNow> Cheapest { get; } = new();
+    public bool CheapestScanInProgress { get; private set; }
+
+    /// <summary>
+    /// Skan na żądanie: dla każdej gry z watchlisty pobiera oferty posortowane
+    /// od najtańszej i bierze pierwszą, która wygląda na tę grę (filtr
+    /// akcesoriów/kodów + dopasowanie tytułu + próg sensowności ceny).
+    /// Celowo nie chodzi w pętli — to ~1 zapytanie na grę.
+    /// </summary>
+    public async Task ScanCheapestAsync(CancellationToken ct)
+    {
+        if (CheapestScanInProgress)
+            return;
+        CheapestScanInProgress = true;
+        try
+        {
+            var matcher = new GameMatcher(watchlist.Snapshot().Select(GamePattern.FromWatch).ToList());
+            foreach (var game in watchlist.Snapshot())
+            {
+                ct.ThrowIfCancellationRequested();
+                IReadOnlyList<Listing> listings;
+                try
+                {
+                    listings = await client.SearchAsync(
+                        game.Query, order: "price_low_to_high", perPage: 48, ct: ct);
+                }
+                catch (VintedBlockedException e)
+                {
+                    LastError = e.Message;
+                    Console.Error.WriteLine($"[warn] Skan najtańszych przerwany: {e.Message}");
+                    return;
+                }
+                catch (Exception e) when (e is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+                {
+                    Console.Error.WriteLine($"[warn] Najtańsza \"{game.Query}\" nieudana: {e.Message}");
+                    continue;
+                }
+
+                var gameKey = "watch:" + game.Query.ToLowerInvariant();
+                var cheapest = listings.FirstOrDefault(l =>
+                    l.Price >= DealEvaluator.MinSanePrice
+                    && DealEvaluator.IsRelevant(l.Title)
+                    && matcher.Match(l.Title, TitleNormalizer.DetectPlatform(l.Title))?.Key == gameKey);
+                if (cheapest is not null)
+                    Cheapest[game.Query] = new CheapestNow(
+                        cheapest.Title, cheapest.Price, cheapest.Currency, cheapest.Url,
+                        DateTimeOffset.UtcNow);
+
+                await Task.Delay(TimeSpan.FromSeconds(1 + Random.Shared.NextDouble() * 1.5), ct);
+            }
+        }
+        finally
+        {
+            CheapestScanInProgress = false;
+        }
+    }
     public int LastCyclePages { get; private set; }
     public int LastCycleNewItems { get; private set; }
     public string? LastError { get; private set; }
@@ -114,17 +179,28 @@ public sealed class TrackerEngine(
     /// odblokowuje mediany od pierwszego dnia. Zasiane oferty nie alertują —
     /// to baza cen, nie nowości.
     /// </summary>
+    /// <summary>Ile gier maksymalnie zasiać w jednym cyklu — duża watchlista
+    /// rozkłada się na kolejne cykle zamiast strzelać setką zapytań naraz.</summary>
+    private const int SeedBatchPerCycle = 10;
+
     private async Task SeedWatchlistAsync(
         GameMatcher matcher,
         Dictionary<(string, string), (string Key, string Title)> autoIndex,
         CancellationToken ct)
     {
+        var seededThisCycle = 0;
         foreach (var game in watchlist.Snapshot())
         {
             ct.ThrowIfCancellationRequested();
+            if (seededThisCycle >= SeedBatchPerCycle)
+            {
+                Console.WriteLine("[info] Limit zasiewania na cykl — reszta gier w kolejnych cyklach");
+                return;
+            }
             var metaKey = "seeded:watch:" + game.Query.ToLowerInvariant();
             if (store.GetMeta(metaKey) == "1")
                 continue;
+            seededThisCycle++;
 
             IReadOnlyList<Listing> listings;
             try

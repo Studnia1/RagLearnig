@@ -75,6 +75,15 @@ public class DealEvaluatorTests
     }
 
     [Fact]
+    public void DigitalCodeIsFilteredOut()
+    {
+        var v = DealEvaluator.Evaluate(
+            MakeListing(20, "Kod do gry Pokemon Sword Nintendo Switch"),
+            maxPrice: 130, marketPrices: Market);
+        Assert.Equal(DealTier.None, v.Tier);
+    }
+
+    [Fact]
     public void BoxOnlyIsFilteredOut()
     {
         var v = DealEvaluator.Evaluate(

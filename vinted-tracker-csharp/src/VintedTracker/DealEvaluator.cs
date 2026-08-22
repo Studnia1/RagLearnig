@@ -73,6 +73,7 @@ public static class DealEvaluator
         "skin", "kubek", "koszulka", "bluza", "maskotka", "pluszak",
         "karton", "sam box", "box only", "pudełko po", "bez gry",
         "kontroler", "pad ", "joy-con", "joycon", "konsola",
+        " kod ", "klucz", "digital", "cyfrow", "steam gift",
     ];
 
     public static bool IsRelevant(string title)

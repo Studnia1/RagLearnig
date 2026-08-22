@@ -85,6 +85,7 @@ public static class Program
             var games = watchlist.Snapshot().Select(g =>
             {
                 var stats = store.StatsFor("watch:" + g.Query.ToLowerInvariant());
+                var cheapest = engine.Cheapest.GetValueOrDefault(g.Query);
                 return new
                 {
                     g.Title,
@@ -95,6 +96,7 @@ public static class Program
                     SampleSize = stats.Sample,
                     SeenCount = stats.Seen,
                     DealCount = stats.Deals,
+                    Cheapest = cheapest,
                 };
             });
             var deals = store.RecentDeals(150).Select(d => new
@@ -129,6 +131,7 @@ public static class Program
                     ItemsTotal = store.ItemCount(),
                     AutoGames = store.AutoGameCount(),
                     config.Defaults.MinMargin,
+                    engine.CheapestScanInProgress,
                 },
             });
         });
@@ -149,6 +152,14 @@ public static class Program
             if (eng.CycleInProgress)
                 return Results.Conflict(new { error = "Cykl już trwa" });
             _ = Task.Run(() => eng.RunCycleAsync(CancellationToken.None));
+            return Results.Accepted();
+        });
+
+        app.MapPost("/api/cheapest", (TrackerEngine eng) =>
+        {
+            if (eng.CheapestScanInProgress)
+                return Results.Conflict(new { error = "Skan już trwa" });
+            _ = Task.Run(() => eng.ScanCheapestAsync(CancellationToken.None));
             return Results.Accepted();
         });
 

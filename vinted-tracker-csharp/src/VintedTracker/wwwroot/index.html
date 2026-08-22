@@ -106,6 +106,7 @@
     <h1>🎮 Vinted Games Tracker</h1>
     <span class="status" id="status">Łączenie…</span>
     <button class="primary" id="checkNow">Sprawdź teraz</button>
+    <button id="cheapestNow" title="Dla każdej śledzonej gry pobiera aktualnie najtańszą sensowną ofertę (ok. minuta)">💰 Najtańsze teraz</button>
   </header>
 
   <h2>Okazje</h2>
@@ -124,6 +125,7 @@
       <th>Gra</th><th>Zapytanie</th>
       <th class="num">Mediana rynku</th><th class="num">Próbka</th>
       <th class="num">Widziane</th><th class="num">Okazje</th>
+      <th class="num">Najtańsza teraz</th>
       <th class="num">Twój próg</th><th></th>
     </tr></thead>
     <tbody id="games"></tbody>
@@ -195,6 +197,10 @@ function renderGames(games) {
       <td class="num muted">${g.sampleSize}</td>
       <td class="num muted">${g.seenCount}</td>
       <td class="num muted">${g.dealCount}</td>
+      <td class="num">${g.cheapest
+        ? `<a href="${esc(g.cheapest.url)}" target="_blank" rel="noopener"
+             title="${esc(g.cheapest.listingTitle)} · sprawdzone ${ago(g.cheapest.checkedAt)}">${fmt.format(g.cheapest.price)}</a>`
+        : '<span class="muted">—</span>'}</td>
       <td class="num"><input class="price" type="number" min="0" step="0.01"
         value="${g.maxPrice ?? ''}" placeholder="—" data-q="${esc(g.query)}"></td>
       <td><button class="del" title="Usuń" data-q="${esc(g.query)}">✕</button></td>
@@ -232,6 +238,21 @@ document.getElementById('checkNow').addEventListener('click', async e => {
   e.target.disabled = true;
   await fetch('/api/check', { method: 'POST' });
   setTimeout(() => { e.target.disabled = false; refresh(); }, 1500);
+});
+
+document.getElementById('cheapestNow').addEventListener('click', async e => {
+  e.target.disabled = true;
+  e.target.textContent = '💰 Skanuję…';
+  await fetch('/api/cheapest', { method: 'POST' });
+  // Skan trwa ~1 s na grę; odświeżaj tabelę do jego końca.
+  const poll = setInterval(async () => {
+    await refresh();
+    if (!lastData?.status?.cheapestScanInProgress) {
+      clearInterval(poll);
+      e.target.disabled = false;
+      e.target.textContent = '💰 Najtańsze teraz';
+    }
+  }, 3000);
 });
 
 document.getElementById('games').addEventListener('change', async e => {
