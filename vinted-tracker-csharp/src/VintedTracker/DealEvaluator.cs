@@ -71,15 +71,21 @@ public static class DealEvaluator
         "etui", "case", "pokrowiec", "steelbook", "poradnik", "przewodnik",
         "figurka", "amiibo", "plakat", "brelok", "przypinka", "naklejka",
         "skin", "kubek", "koszulka", "bluza", "maskotka", "pluszak",
-        "karton", "sam box", "box only", "pudełko po", "bez gry",
+        "karton", "sam box", "box only", " box ", "pudełko", "pudelko", "bez gry",
         "kontroler", "pad ", "joy-con", "joycon", "konsola",
         " kod ", "klucz", "digital", "cyfrow", "steam gift",
+        "magnet", " bag ", "torba", "torebka", "podkładk", "podkladk",
+        "miecze", "karty", " karta ", " card", "tcg",
     ];
 
-    public static bool IsRelevant(string title)
+    /// <param name="extraKeywords">Gruz-lista użytkownika (dashboard, przycisk 🚫)
+    /// dokładana do wbudowanych słów kluczowych.</param>
+    public static bool IsRelevant(string title, IReadOnlyCollection<string>? extraKeywords = null)
     {
         var t = " " + title.ToLowerInvariant() + " ";
-        return !AccessoryKeywords.Any(t.Contains);
+        if (AccessoryKeywords.Any(t.Contains))
+            return false;
+        return extraKeywords is null || !extraKeywords.Any(k => t.Contains(k.ToLowerInvariant()));
     }
 
     public static DealVerdict Evaluate(

@@ -132,6 +132,7 @@ public static class Program
                     AutoGames = store.AutoGameCount(),
                     config.Defaults.MinMargin,
                     engine.CheapestScanInProgress,
+                    Blocklist = store.GetBlocklist(),
                 },
             });
         });
@@ -163,10 +164,23 @@ public static class Program
             return Results.Accepted();
         });
 
+        app.MapPost("/api/blocklist", (BlocklistRequest req) =>
+        {
+            if (string.IsNullOrWhiteSpace(req.Keyword) || req.Keyword.Trim().Length < 2)
+                return Results.BadRequest(new { error = "Słowo musi mieć co najmniej 2 znaki" });
+            var cleaned = store.AddBlocklistKeyword(req.Keyword);
+            return Results.Ok(new { keyword = req.Keyword.Trim().ToLowerInvariant(), cleaned });
+        });
+
+        app.MapDelete("/api/blocklist/{keyword}", (string keyword) =>
+            store.RemoveBlocklistKeyword(keyword) ? Results.NoContent() : Results.NotFound());
+
         Console.WriteLine($"Dashboard: {config.Defaults.ListenUrl}");
         await app.RunAsync();
         return 0;
     }
+
+    private sealed record BlocklistRequest(string Keyword);
 
     /// <summary>Pętla w tle: cykl, sen z losowym rozrzutem, od nowa.
     /// Przy blokadzie anty-bot odstępy rosną (x2 za każdy zablokowany cykl,

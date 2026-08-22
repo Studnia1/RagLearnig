@@ -23,6 +23,20 @@ public class MatchingTests
     public void DetectsPlatform(string title, string? expected) =>
         Assert.Equal(expected, TitleNormalizer.DetectPlatform(title));
 
+    [Theory]
+    [InlineData("Big Brain Academy - Gra na Nintendo DS", "ds")]
+    [InlineData("Nintendo 3DS Zelda Ocarina of Time", "3ds")]
+    public void HandheldPlatformsAreDetected(string title, string expected) =>
+        Assert.Equal(expected, TitleNormalizer.DetectPlatform(title));
+
+    [Fact]
+    public void CustomBlocklistKeywordFiltersListing()
+    {
+        // "kolekcjonera" nie jest na wbudowanej liście — filtruje dopiero gruz-lista.
+        Assert.True(DealEvaluator.IsRelevant("Gra dla kolekcjonera vintage"));
+        Assert.False(DealEvaluator.IsRelevant("Gra dla kolekcjonera vintage", ["kolekcjonera"]));
+    }
+
     [Fact]
     public void PolishDiacriticsAreStripped()
     {

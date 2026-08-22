@@ -33,7 +33,7 @@ public static class TitleNormalizer
         ("xboxseriesx", "xbox-series"), ("xboxseriess", "xbox-series"), ("xboxseries", "xbox-series"),
         ("xbox360", "xbox360"), ("xboxone", "xbox-one"), ("xbox1", "xbox-one"),
         ("psvita", "psvita"), ("gameboyadvance", "gba"), ("gameboy", "gb"),
-        ("wiiu", "wiiu"),
+        ("wiiu", "wiiu"), ("nintendo3ds", "3ds"), ("nintendods", "ds"),
     ];
 
     /// <summary>Znaczniki jednotokenowe — porównywane z całym tokenem, nie
@@ -46,7 +46,7 @@ public static class TitleNormalizer
         ["x360"] = "xbox360", ["xone"] = "xbox-one", ["xbox"] = "xbox-one",
         ["vita"] = "psvita", ["psp"] = "psp",
         ["wiiu"] = "wiiu", ["wii"] = "wii",
-        ["3ds"] = "3ds", ["nds"] = "ds", ["gba"] = "gba",
+        ["3ds"] = "3ds", ["nds"] = "ds", ["ds"] = "ds", ["gba"] = "gba",
         ["pc"] = "pc",
     };
 

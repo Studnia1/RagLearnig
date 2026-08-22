@@ -71,6 +71,20 @@ public class SqliteStoreTests : IDisposable
     }
 
     [Fact]
+    public void BlocklistKeywordCleansRetroactively()
+    {
+        _store.Insert(Item(1, 100, tier: DealTier.Strong) with { Title = "Pokemon Sword fridge magnet" });
+        _store.Insert(Item(2, 200));
+        var cleaned = _store.AddBlocklistKeyword("Magnet");
+        Assert.Equal(1, cleaned);
+        Assert.Contains("magnet", _store.GetBlocklist());
+        Assert.Empty(_store.RecentDeals());                       // okazja-gruz znikła
+        Assert.Single(_store.PricesFor("watch:pokemon sword"));   // i wypadła z puli median
+        Assert.True(_store.RemoveBlocklistKeyword("magnet"));
+        Assert.Empty(_store.GetBlocklist());
+    }
+
+    [Fact]
     public void MetaRoundtrip()
     {
         Assert.Null(_store.GetMeta("catalog_id"));

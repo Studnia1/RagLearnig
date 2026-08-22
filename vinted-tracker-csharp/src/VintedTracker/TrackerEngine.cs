@@ -31,6 +31,8 @@ public sealed class TrackerEngine(
     public ConcurrentDictionary<string, CheapestNow> Cheapest { get; } = new();
     public bool CheapestScanInProgress { get; private set; }
 
+    private IReadOnlyList<string> _blocklist = [];
+
     /// <summary>
     /// Skan na żądanie: dla każdej gry z watchlisty pobiera oferty posortowane
     /// od najtańszej i bierze pierwszą, która wygląda na tę grę (filtr
@@ -45,6 +47,7 @@ public sealed class TrackerEngine(
         try
         {
             var matcher = new GameMatcher(watchlist.Snapshot().Select(GamePattern.FromWatch).ToList());
+            var blocklist = store.GetBlocklist();
             foreach (var game in watchlist.Snapshot())
             {
                 ct.ThrowIfCancellationRequested();
@@ -69,7 +72,7 @@ public sealed class TrackerEngine(
                 var gameKey = "watch:" + game.Query.ToLowerInvariant();
                 var cheapest = listings.FirstOrDefault(l =>
                     l.Price >= DealEvaluator.MinSanePrice
-                    && DealEvaluator.IsRelevant(l.Title)
+                    && DealEvaluator.IsRelevant(l.Title, blocklist)
                     && matcher.Match(l.Title, TitleNormalizer.DetectPlatform(l.Title))?.Key == gameKey);
                 if (cheapest is not null)
                     Cheapest[game.Query] = new CheapestNow(
@@ -104,6 +107,7 @@ public sealed class TrackerEngine(
             var maxPages = firstRun ? config.Defaults.BackfillPages : config.Defaults.MaxPagesPerCycle;
             var matcher = new GameMatcher(watchlist.Snapshot().Select(GamePattern.FromWatch).ToList());
             var autoIndex = store.AutoGameIndex();
+            _blocklist = store.GetBlocklist();
 
             var pages = 0;
             var newItems = 0;
@@ -242,7 +246,7 @@ public sealed class TrackerEngine(
         bool firstRun,
         CancellationToken ct)
     {
-        var relevant = DealEvaluator.IsRelevant(listing.Title);
+        var relevant = DealEvaluator.IsRelevant(listing.Title, _blocklist);
         var normKey = TitleNormalizer.NormKey(listing.Title);
         var platform = TitleNormalizer.DetectPlatform(listing.Title);
 

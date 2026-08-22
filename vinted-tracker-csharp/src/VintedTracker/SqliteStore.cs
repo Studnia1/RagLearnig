@@ -274,6 +274,50 @@ public sealed class SqliteStore : IDisposable
     public long ItemCount() => ScalarLong("SELECT COUNT(*) FROM items");
     public long AutoGameCount() => ScalarLong("SELECT COUNT(*) FROM auto_games");
 
+    /// <summary>Gruz-lista użytkownika: słowa kluczowe oznaczające akcesoria/śmieci.</summary>
+    public IReadOnlyList<string> GetBlocklist()
+    {
+        var raw = GetMeta("blocklist");
+        return raw is null ? [] : JsonSerializer.Deserialize<List<string>>(raw) ?? [];
+    }
+
+    /// <summary>Dodaje słowo do gruz-listy i czyści wstecz: oferty z tym słowem
+    /// w tytule tracą status okazji i wypadają z puli median. Zwraca liczbę
+    /// wyczyszczonych ofert.</summary>
+    public int AddBlocklistKeyword(string keyword)
+    {
+        keyword = keyword.Trim().ToLowerInvariant();
+        if (keyword.Length < 2)
+            return 0;
+        var list = GetBlocklist().ToList();
+        if (!list.Contains(keyword))
+        {
+            list.Add(keyword);
+            SetMeta("blocklist", JsonSerializer.Serialize(list));
+        }
+        lock (_lock)
+        {
+            using var cmd = _conn.CreateCommand();
+            cmd.CommandText = """
+                UPDATE items SET tier = 'None', relevant = 0
+                WHERE (relevant = 1 OR tier != 'None')
+                  AND instr(lower(title), $kw) > 0
+                """;
+            cmd.Parameters.AddWithValue("$kw", keyword);
+            return cmd.ExecuteNonQuery();
+        }
+    }
+
+    public bool RemoveBlocklistKeyword(string keyword)
+    {
+        keyword = keyword.Trim().ToLowerInvariant();
+        var list = GetBlocklist().ToList();
+        var removed = list.Remove(keyword);
+        if (removed)
+            SetMeta("blocklist", JsonSerializer.Serialize(list));
+        return removed;
+    }
+
     public string? GetMeta(string key)
     {
         lock (_lock)
