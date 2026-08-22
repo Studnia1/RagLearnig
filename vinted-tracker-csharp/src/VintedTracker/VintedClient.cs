@@ -12,6 +12,10 @@ namespace VintedTracker;
 /// stronę główną jak przeglądarka daje ciasteczka (m.in. access_token_web),
 /// których używamy przy zapytaniach. Przy 401/403 sesja jest odświeżana.
 /// </summary>
+/// <summary>Anty-bot Vinted odrzuca żądania (403/429) — stan przejściowy,
+/// wymaga odczekania, nie ponawiania w pętli.</summary>
+public sealed class VintedBlockedException(string message) : HttpRequestException(message);
+
 public sealed class VintedClient
 {
     private const string DefaultUserAgent =
@@ -31,17 +35,42 @@ public sealed class VintedClient
             CookieContainer = _cookies,
             AutomaticDecompression = DecompressionMethods.All,
         })
-        { Timeout = TimeSpan.FromSeconds(30) };
+        {
+            Timeout = TimeSpan.FromSeconds(30),
+            DefaultRequestVersion = HttpVersion.Version20,
+            DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrHigher,
+        };
+        // Nagłówki jak w prawdziwym Chrome — anty-bot Vinted (Cloudflare)
+        // porównuje je z fingerprint'em klienta.
         _http.DefaultRequestHeaders.UserAgent.ParseAdd(DefaultUserAgent);
         _http.DefaultRequestHeaders.Accept.ParseAdd("application/json, text/plain, */*");
         _http.DefaultRequestHeaders.AcceptLanguage.ParseAdd("pl-PL,pl;q=0.9,en;q=0.8");
+        _http.DefaultRequestHeaders.Add("sec-ch-ua",
+            "\"Not/A)Brand\";v=\"8\", \"Chromium\";v=\"126\", \"Google Chrome\";v=\"126\"");
+        _http.DefaultRequestHeaders.Add("sec-ch-ua-mobile", "?0");
+        _http.DefaultRequestHeaders.Add("sec-ch-ua-platform", "\"Windows\"");
+        _http.DefaultRequestHeaders.Add("Sec-Fetch-Dest", "empty");
+        _http.DefaultRequestHeaders.Add("Sec-Fetch-Mode", "cors");
+        _http.DefaultRequestHeaders.Add("Sec-Fetch-Site", "same-origin");
+        _http.DefaultRequestHeaders.Referrer = new Uri(_baseUrl + "/catalog");
     }
 
     private async Task RefreshSessionAsync(CancellationToken ct)
     {
         foreach (Cookie cookie in _cookies.GetAllCookies())
             cookie.Expired = true;
-        using var resp = await _http.GetAsync(_baseUrl + "/", ct);
+        using var req = new HttpRequestMessage(HttpMethod.Get, _baseUrl + "/");
+        req.Headers.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
+        req.Headers.Add("Sec-Fetch-Dest", "document");
+        req.Headers.Add("Sec-Fetch-Mode", "navigate");
+        req.Headers.Add("Sec-Fetch-Site", "none");
+        req.Headers.Add("Sec-Fetch-User", "?1");
+        req.Headers.Add("Upgrade-Insecure-Requests", "1");
+        using var resp = await _http.SendAsync(req, ct);
+        if (resp.StatusCode is HttpStatusCode.Forbidden or (HttpStatusCode)429)
+            throw new VintedBlockedException(
+                $"Vinted tymczasowo blokuje żądania (HTTP {(int)resp.StatusCode} na stronie głównej) — " +
+                "to ochrona anty-bot; zwykle puszcza po kilkunastu minutach. Tracker spróbuje w kolejnych cyklach.");
         resp.EnsureSuccessStatusCode();
         _authenticated = true;
     }
@@ -292,7 +321,7 @@ public sealed class VintedClient
         {
             using var resp = await _http.GetAsync(url, ct);
             lastStatus = resp.StatusCode;
-            if (resp.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            if (resp.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or (HttpStatusCode)429)
             {
                 await Task.Delay(TimeSpan.FromSeconds(1 + attempt * 2 + Random.Shared.NextDouble()), ct);
                 await RefreshSessionAsync(ct);
@@ -307,6 +336,10 @@ public sealed class VintedClient
             return items.OfType<JsonNode>().Select(i => Listing.FromApi(i, _baseUrl)).ToList();
         }
 
+        if (lastStatus is HttpStatusCode.Forbidden or (HttpStatusCode)429)
+            throw new VintedBlockedException(
+                $"Vinted tymczasowo blokuje żądania (HTTP {(int)lastStatus} z API) — " +
+                "ochrona anty-bot; zwykle puszcza po kilkunastu minutach. Tracker spróbuje w kolejnych cyklach.");
         throw new HttpRequestException($"Vinted API wciąż odrzuca zapytanie (HTTP {(int)lastStatus}) — spróbuj później");
     }
 

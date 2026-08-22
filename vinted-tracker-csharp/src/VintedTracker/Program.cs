@@ -157,11 +157,14 @@ public static class Program
         return 0;
     }
 
-    /// <summary>Pętla w tle: cykl, sen z losowym rozrzutem, od nowa.</summary>
+    /// <summary>Pętla w tle: cykl, sen z losowym rozrzutem, od nowa.
+    /// Przy blokadzie anty-bot odstępy rosną (x2 za każdy zablokowany cykl,
+    /// do 30 min), żeby nie podtrzymywać blokady kolejnymi żądaniami.</summary>
     private sealed class PollingService(TrackerEngine engine, int intervalSeconds) : BackgroundService
     {
         protected override async Task ExecuteAsync(CancellationToken ct)
         {
+            var blockedStreak = 0;
             while (!ct.IsCancellationRequested)
             {
                 try
@@ -178,7 +181,11 @@ public static class Program
                     Console.Error.WriteLine($"[error] Przebieg zakończony błędem — próbuję dalej: {e.Message}");
                 }
 
-                var sleep = TimeSpan.FromSeconds(intervalSeconds + Random.Shared.NextDouble() * intervalSeconds * 0.2);
+                blockedStreak = engine.LastCycleBlocked ? blockedStreak + 1 : 0;
+                var seconds = Math.Min(intervalSeconds * Math.Pow(2, blockedStreak), 1800);
+                if (blockedStreak > 0)
+                    Console.WriteLine($"[info] Blokada anty-bot — następna próba za {seconds / 60:0.#} min");
+                var sleep = TimeSpan.FromSeconds(seconds + Random.Shared.NextDouble() * seconds * 0.2);
                 try { await Task.Delay(sleep, ct); }
                 catch (OperationCanceledException) { break; }
             }

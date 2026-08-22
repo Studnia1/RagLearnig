@@ -17,6 +17,8 @@ public sealed class TrackerEngine(
 {
     public DateTimeOffset? LastCycleFinished { get; private set; }
     public bool CycleInProgress { get; private set; }
+    /// <summary>Ostatni cykl zakończył się blokadą anty-bot — pętla wydłuża odstępy.</summary>
+    public bool LastCycleBlocked { get; private set; }
     public int LastCyclePages { get; private set; }
     public int LastCycleNewItems { get; private set; }
     public string? LastError { get; private set; }
@@ -25,6 +27,7 @@ public sealed class TrackerEngine(
     public async Task RunCycleAsync(CancellationToken ct)
     {
         CycleInProgress = true;
+        LastCycleBlocked = false;
         try
         {
             var catalogIds = await EnsureCatalogAsync(ct);
@@ -52,6 +55,13 @@ public sealed class TrackerEngine(
                     // Vinted nie pozwala stronicować głębiej niż ~1000 ofert —
                     // to naturalny koniec backfillu, nie błąd.
                     Console.WriteLine($"[info] Limit stronicowania Vinted na stronie {page} — kończę przebieg");
+                    break;
+                }
+                catch (VintedBlockedException e)
+                {
+                    LastCycleBlocked = true;
+                    LastError = e.Message;
+                    Console.Error.WriteLine($"[warn] {e.Message}");
                     break;
                 }
                 catch (Exception e) when (e is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
