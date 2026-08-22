@@ -101,6 +101,7 @@ public sealed class VintedClient
         ];
         var counts = new Dictionary<int, int>();
         var significant = new HashSet<int>();
+        var sampleItemIds = new List<long>();
         foreach (var probe in probes)
         {
             IReadOnlyList<Listing> results;
@@ -118,8 +119,9 @@ public sealed class VintedClient
                 .GroupBy(r => r.CatalogId!.Value)
                 .ToDictionary(g => g.Key, g => g.Count());
             Console.WriteLine($"[info] Sonda \"{probe}\": ofert {results.Count}, z catalog_id {local.Values.Sum()}");
-            if (local.Count == 0)
-                continue;
+            // Wyniki wyszukiwania nie niosą już catalog_id — zbieramy ID ofert,
+            // żeby w razie czego doczytać katalog z ich stron szczegółów.
+            sampleItemIds.AddRange(results.Take(4).Select(r => r.Id));
             var total = local.Values.Sum();
             foreach (var (id, n) in local)
             {
@@ -133,7 +135,52 @@ public sealed class VintedClient
         }
 
         var ids = significant.OrderByDescending(id => counts[id]).Take(6).ToList();
-        return ids.Count > 0 ? (ids, $"z sond wyszukiwania: {string.Join(",", ids)}") : null;
+        if (ids.Count > 0)
+            return (ids, $"z sond wyszukiwania: {string.Join(",", ids)}");
+
+        // 3) Szczegóły ofert: /api/v2/items/{id} nadal zwraca catalog_id.
+        var detailCounts = new Dictionary<int, int>();
+        foreach (var itemId in sampleItemIds.Distinct().Take(12))
+        {
+            try
+            {
+                if (await GetItemCatalogIdAsync(itemId, ct) is { } cid)
+                    detailCounts[cid] = detailCounts.GetValueOrDefault(cid) + 1;
+            }
+            catch (HttpRequestException)
+            {
+                // pojedyncza oferta mogła zniknąć — idziemy dalej
+            }
+            await Task.Delay(TimeSpan.FromSeconds(0.7 + Random.Shared.NextDouble() * 0.8), ct);
+        }
+        Console.WriteLine($"[info] Szczegóły ofert: catalog_id z {detailCounts.Values.Sum()} ofert, " +
+                          $"katalogi: {string.Join(",", detailCounts.Keys)}");
+        var confirmed = detailCounts.Where(kv => kv.Value >= 2).Select(kv => kv.Key)
+            .OrderByDescending(id => detailCounts[id]).Take(6).ToList();
+        if (confirmed.Count == 0 && detailCounts.Count > 0)
+            confirmed = [detailCounts.OrderByDescending(kv => kv.Value).First().Key];
+        return confirmed.Count > 0
+            ? (confirmed, $"ze szczegółów ofert: {string.Join(",", confirmed)}")
+            : null;
+    }
+
+    /// <summary>Katalog pojedynczej oferty ze strony szczegółów — wyniki
+    /// wyszukiwania przestały nieść catalog_id, szczegóły wciąż go mają.</summary>
+    public async Task<int?> GetItemCatalogIdAsync(long itemId, CancellationToken ct = default)
+    {
+        if (!_authenticated)
+            await RefreshSessionAsync(ct);
+        using var resp = await _http.GetAsync($"{_baseUrl}/api/v2/items/{itemId}", ct);
+        if (!resp.IsSuccessStatusCode)
+            return null;
+        var json = JsonNode.Parse(await resp.Content.ReadAsStringAsync(ct));
+        var node = json?["item"]?["catalog_id"] ?? json?["catalog_id"];
+        return node switch
+        {
+            JsonValue v when v.TryGetValue(out long l) => (int)l,
+            JsonValue v when v.TryGetValue(out string? s) && int.TryParse(s, out var p) => p,
+            _ => null,
+        };
     }
 
     private async Task<(int Id, string Title)?> TryTreeDiscoveryAsync(CancellationToken ct)
@@ -262,12 +309,23 @@ public sealed class VintedClient
                     report.AppendLine($"klucze pierwszej oferty: {string.Join(", ", first.Select(kv => kv.Key))}");
                     var withCatalog = items.OfType<JsonObject>().Count(i => i["catalog_id"] is not null);
                     report.AppendLine($"ofert z catalog_id: {withCatalog}/{items.Count}");
-                    var histogram = items.OfType<JsonObject>()
-                        .Select(i => i["catalog_id"]?.ToString() ?? "brak")
-                        .GroupBy(x => x)
-                        .OrderByDescending(g => g.Count())
-                        .Select(g => $"{g.Key}×{g.Count()}");
-                    report.AppendLine($"catalog_id: {string.Join(", ", histogram)}");
+                    if (first["item_box"] is { } box)
+                        report.AppendLine($"item_box: {Snippet(box.ToJsonString())}");
+
+                    var firstId = first["id"]!.GetValue<long>();
+                    using var detail = await _http.GetAsync($"{_baseUrl}/api/v2/items/{firstId}", ct);
+                    var detailBody = await detail.Content.ReadAsStringAsync(ct);
+                    report.AppendLine($"GET /api/v2/items/{firstId} → HTTP {(int)detail.StatusCode}");
+                    if (detail.IsSuccessStatusCode)
+                    {
+                        var dj = JsonNode.Parse(detailBody);
+                        var cid = dj?["item"]?["catalog_id"] ?? dj?["catalog_id"];
+                        report.AppendLine($"catalog_id ze szczegółów: {cid?.ToString() ?? "BRAK"}");
+                    }
+                    else
+                    {
+                        report.AppendLine($"Odpowiedź szczegółów: {Snippet(detailBody)}");
+                    }
                 }
             }
         }
