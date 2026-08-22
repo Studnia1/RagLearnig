@@ -19,8 +19,10 @@ public sealed class Defaults
     /// Vinted i tak ucina stronicowanie przy ~1000 ofert (10 stron po 96).</summary>
     [JsonPropertyName("backfillPages")] public int BackfillPages { get; init; } = 10;
 
-    /// <summary>Limit stron na zwykły cykl — bezpiecznik po dłuższym postoju.</summary>
-    [JsonPropertyName("maxPagesPerCycle")] public int MaxPagesPerCycle { get; init; } = 5;
+    /// <summary>Limit stron na zwykły cykl. 10 = pełny zasięg stronicowania
+    /// Vinted, żeby po włączeniu komputera dogonić wszystko, co się da;
+    /// watermark i tak kończy wcześniej, gdy nie ma nowych ofert.</summary>
+    [JsonPropertyName("maxPagesPerCycle")] public int MaxPagesPerCycle { get; init; } = 10;
 
     /// <summary>Minimalna marża (mediana − cena) w walucie rynku, żeby wysłać push.</summary>
     [JsonPropertyName("minMargin")] public decimal MinMargin { get; init; } = 50m;

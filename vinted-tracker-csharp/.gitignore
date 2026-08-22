@@ -2,4 +2,5 @@ bin/
 obj/
 data/
 config.json
+start.sh
 .env

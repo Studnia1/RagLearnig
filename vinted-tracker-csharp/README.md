@@ -63,6 +63,22 @@ katalogu w przeglądarce (np. `.../catalog/3025-gry`) i wpisz w `catalogIds`.
 
 Tryb jednorazowy bez UI (np. pod crona): `dotnet run --project src/VintedTracker -- --once`.
 
+### Wyłączanie i włączanie komputera
+
+Cały stan mieszka w SQLite (`data/tracker.sqlite3`) i przeżywa restarty:
+historia cen do median, gry auto, wykryty katalog — backfill nigdy się nie
+powtarza. Po włączeniu tracker automatycznie dogania oferty wstecz aż do
+limitu stronicowania Vinted (~960 najnowszych), więc typowa przerwa nocna
+nie robi dziur w medianach. Jedyne, co przepada, to alerty z okresu, gdy
+proces nie działał. Wygodny start jednym poleceniem:
+
+```bash
+cp start.example.sh start.sh   # raz: wpisz token i chat id Telegrama
+./start.sh                     # potem zawsze tylko to
+```
+
+`start.sh` jest w `.gitignore`, więc token nie trafi do repozytorium.
+
 ## Alerty na Telegram (zalecane przy flippingu)
 
 1. Napisz do [@BotFather](https://t.me/BotFather) → `/newbot` → dostajesz
