@@ -90,6 +90,9 @@ public sealed class TrackerEngine(
                 await Task.Delay(TimeSpan.FromSeconds(1.5 + Random.Shared.NextDouble() * 1.5), ct);
             }
 
+            if (!LastCycleBlocked)
+                await SeedWatchlistAsync(matcher, autoIndex, ct);
+
             var promoted = store.PromoteAutoGames(config.Defaults.AutoPromoteMinSample);
             if (promoted > 0)
                 Console.WriteLine($"[info] Auto-promocja: {promoted} nowych grup gier w słowniku");
@@ -101,6 +104,58 @@ public sealed class TrackerEngine(
         finally
         {
             CycleInProgress = false;
+        }
+    }
+
+    /// <summary>
+    /// Jednorazowe zasianie puli cen dla gier z watchlisty: firehose niesie
+    /// najnowsze oferty z całej kategorii, więc konkretny tytuł zbiera próbkę
+    /// powoli. Celowane wyszukiwanie (raz na grę, wynik zapamiętany w meta)
+    /// odblokowuje mediany od pierwszego dnia. Zasiane oferty nie alertują —
+    /// to baza cen, nie nowości.
+    /// </summary>
+    private async Task SeedWatchlistAsync(
+        GameMatcher matcher,
+        Dictionary<(string, string), (string Key, string Title)> autoIndex,
+        CancellationToken ct)
+    {
+        foreach (var game in watchlist.Snapshot())
+        {
+            ct.ThrowIfCancellationRequested();
+            var metaKey = "seeded:watch:" + game.Query.ToLowerInvariant();
+            if (store.GetMeta(metaKey) == "1")
+                continue;
+
+            IReadOnlyList<Listing> listings;
+            try
+            {
+                listings = await client.SearchAsync(game.Query, ct: ct);
+            }
+            catch (VintedBlockedException e)
+            {
+                LastCycleBlocked = true;
+                LastError = e.Message;
+                Console.Error.WriteLine($"[warn] Zasiewanie przerwane: {e.Message}");
+                return;
+            }
+            catch (Exception e) when (e is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+            {
+                Console.Error.WriteLine($"[warn] Zasiewanie \"{game.Query}\" nieudane: {e.Message}");
+                continue;
+            }
+
+            var added = 0;
+            foreach (var listing in listings)
+            {
+                if (store.IsKnown(listing.Id))
+                    continue;
+                added++;
+                // firstRun: true — zasiane oferty budują tylko bazę cen.
+                await ProcessListingAsync(listing, matcher, autoIndex, firstRun: true, ct);
+            }
+            store.SetMeta(metaKey, "1");
+            Console.WriteLine($"[info] Zasiano \"{game.Query}\": {added} ofert do bazy cen");
+            await Task.Delay(TimeSpan.FromSeconds(1.5 + Random.Shared.NextDouble() * 1.5), ct);
         }
     }
 
