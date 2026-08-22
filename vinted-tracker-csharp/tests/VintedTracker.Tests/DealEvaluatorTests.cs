@@ -131,6 +131,20 @@ public class DealEvaluatorTests
         Assert.InRange(trimmed, 195, 210);
     }
 
+    [Fact]
+    public void CredibleFloorIsThirtyPercentOfMedian()
+    {
+        // Przycięta mediana Market ≈ 202.50 → próg wiarygodności ≈ 60.75.
+        var floor = DealEvaluator.CredibleFloor(Market);
+        Assert.InRange(floor, 58, 64);
+    }
+
+    [Fact]
+    public void CredibleFloorFallsBackOnSmallSample()
+    {
+        Assert.Equal(DealEvaluator.MinSanePrice, DealEvaluator.CredibleFloor([200, 210]));
+    }
+
     [Theory]
     [InlineData(new double[] { 1, 2, 3 }, 2)]
     [InlineData(new double[] { 4, 1, 3, 2 }, 2.5)]

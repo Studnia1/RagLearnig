@@ -165,6 +165,20 @@ public static class DealEvaluator
         return new DealVerdict(tier, score, reasons, bestReference);
     }
 
+    /// <summary>
+    /// Dolna granica wiarygodnej ceny dla gry: poniżej 30% mediany oferta jest
+    /// w strefie "podejrzanie tanio" (scam/sam karton), więc np. skan
+    /// "najtańsze teraz" ją pomija. Przy zbyt małej próbce zostaje sam próg
+    /// sensowności.
+    /// </summary>
+    public static decimal CredibleFloor(IReadOnlyList<decimal> marketPrices)
+    {
+        var sane = marketPrices.Where(p => p >= MinSanePrice).ToList();
+        if (sane.Count < MinSample)
+            return MinSanePrice;
+        return Math.Max(MinSanePrice, TrimmedMedian(sane) * SuspiciousRatio);
+    }
+
     /// <summary>Mediana z próbki przyciętej o 10% najtańszych i 10% najdroższych.</summary>
     public static decimal TrimmedMedian(IReadOnlyList<decimal> values)
     {

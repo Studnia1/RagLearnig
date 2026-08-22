@@ -2,10 +2,11 @@ using System.Collections.Concurrent;
 
 namespace VintedTracker;
 
-/// <summary>Aktualnie najtańsza sensowna oferta śledzonej gry (skan na żądanie).</summary>
+/// <summary>Aktualnie najtańsza wiarygodna oferta śledzonej gry (skan na żądanie).
+/// <paramref name="Bargain"/> = cena ≤ 75% mediany, czyli realna okazja.</summary>
 public sealed record CheapestNow(
     string ListingTitle, decimal Price, string Currency, string Url,
-    DateTimeOffset CheckedAt);
+    DateTimeOffset CheckedAt, bool Bargain, decimal? Median);
 
 /// <summary>
 /// Silnik w trybie firehose: zamiast zapytania per gra pobiera jeden strumień
@@ -70,14 +71,25 @@ public sealed class TrackerEngine(
                 }
 
                 var gameKey = "watch:" + game.Query.ToLowerInvariant();
+                // Ten sam bezpiecznik co w silniku okazji: ceny poniżej 30%
+                // mediany to strefa scam/sam karton — pomijamy je, zamiast
+                // pokazywać jako "najtańsze".
+                var prices = store.PricesFor(gameKey);
+                var floor = DealEvaluator.CredibleFloor(prices);
+                var sane = prices.Where(p => p >= DealEvaluator.MinSanePrice).ToList();
+                decimal? median = sane.Count >= DealEvaluator.MinSample
+                    ? DealEvaluator.TrimmedMedian(sane) : null;
+
                 var cheapest = listings.FirstOrDefault(l =>
-                    l.Price >= DealEvaluator.MinSanePrice
+                    l.Price >= floor
                     && DealEvaluator.IsRelevant(l.Title, blocklist)
                     && matcher.Match(l.Title, TitleNormalizer.DetectPlatform(l.Title))?.Key == gameKey);
                 if (cheapest is not null)
                     Cheapest[game.Query] = new CheapestNow(
                         cheapest.Title, cheapest.Price, cheapest.Currency, cheapest.Url,
-                        DateTimeOffset.UtcNow);
+                        DateTimeOffset.UtcNow,
+                        Bargain: median is { } m && cheapest.Price <= m * DealEvaluator.DealRatio,
+                        Median: median);
 
                 await Task.Delay(TimeSpan.FromSeconds(1 + Random.Shared.NextDouble() * 1.5), ct);
             }
