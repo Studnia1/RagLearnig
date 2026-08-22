@@ -87,6 +87,9 @@ public static class DealEvaluator
         " cd ", " dvd", "blu-ray", "bluray",
         // wersje cyfrowe
         " kod ", "klucz", "digital", "cyfrow", "steam gift",
+        // importy z innych regionów — inna okładka/język = inna wartość rynkowa,
+        // psują mediany polskiego rynku
+        "japo", "japan", "jpn", "azjatyck", "korea",
     ];
 
     /// <param name="extraKeywords">Gruz-lista użytkownika (dashboard, przycisk 🚫)

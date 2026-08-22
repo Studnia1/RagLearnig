@@ -57,6 +57,10 @@ public class MatchingTests
     [InlineData("The Legend of Zelda Tears of the Kingdom coin")]
     [InlineData("Pocztówki Nintendo Triangle Strategy")]
     [InlineData("Super Mario RPG Princess Peach pin na plecak")]
+    [InlineData("Tales of vesperia japońska ps3 best hits")]
+    [InlineData("Persona 5 Royal Japan import")]
+    [InlineData("Zelda Breath of the Wild JPN")]
+    [InlineData("Mario Kart 8 wersja azjatycka")]
     public void MerchAndWrongMediaAreFilteredOut(string title) =>
         Assert.False(DealEvaluator.IsRelevant(title));
 
