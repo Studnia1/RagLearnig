@@ -193,6 +193,39 @@ public sealed class SqliteStore : IDisposable
         }
     }
 
+    public sealed record TopOfferRow(
+        long Id, string Title, decimal Price, string Currency, string Url,
+        string? PhotoUrl, long FirstSeenUnix);
+
+    /// <summary>Najlepsze (najtańsze wiarygodne) oferty gry z ostatnich dni —
+    /// do rozwijanego panelu pod grą w tabeli śledzonych.</summary>
+    public IReadOnlyList<TopOfferRow> TopOffersFor(
+        string gameKey, decimal minPrice, int maxAgeDays = 7, int limit = 5)
+    {
+        var cutoff = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - (long)maxAgeDays * 86400;
+        lock (_lock)
+        {
+            using var cmd = _conn.CreateCommand();
+            cmd.CommandText = """
+                SELECT id, title, price, currency, url, photo_url, first_seen FROM items
+                WHERE game_key = $g AND relevant = 1 AND first_seen >= $cutoff AND price >= $min
+                ORDER BY price ASC LIMIT $limit
+                """;
+            cmd.Parameters.AddWithValue("$g", gameKey);
+            cmd.Parameters.AddWithValue("$cutoff", cutoff);
+            cmd.Parameters.AddWithValue("$min", (double)minPrice);
+            cmd.Parameters.AddWithValue("$limit", limit);
+            var rows = new List<TopOfferRow>();
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+                rows.Add(new TopOfferRow(
+                    reader.GetInt64(0), reader.GetString(1), (decimal)reader.GetDouble(2),
+                    reader.GetString(3), reader.GetString(4),
+                    reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetInt64(6)));
+            return rows;
+        }
+    }
+
     public GameStatsRow StatsFor(string gameKey, int maxAgeDays = 30)
     {
         var prices = PricesFor(gameKey, maxAgeDays);

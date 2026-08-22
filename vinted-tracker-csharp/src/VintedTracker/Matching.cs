@@ -108,7 +108,9 @@ public static class TitleNormalizer
     private static bool IsPlatformToken(string token) =>
         TokenMarkers.ContainsKey(token) || token is "nintendo" or "playstation";
 
-    private static string StripDiacritics(string s)
+    /// <summary>Składa diakrytyki (á→a, ü→u, ł→l) — używane też przez filtr
+    /// gruzu, żeby jeden rdzeń łapał warianty ze wszystkich języków Vinted.</summary>
+    public static string StripDiacritics(string s)
     {
         var formD = s.Normalize(NormalizationForm.FormD);
         var sb = new StringBuilder(formD.Length);

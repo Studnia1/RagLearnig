@@ -115,6 +115,35 @@
   td a:hover { text-decoration: underline; }
   td a.bargain { color: var(--strong-ink); background: var(--strong-bg);
     padding: 1px 8px; border-radius: 999px; font-weight: 700; }
+  .tablebar { display: flex; gap: 12px; align-items: center; margin: 0 0 10px; }
+  .tablebar input {
+    font: inherit; font-size: 13.5px; padding: 6px 12px; width: 240px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); color: var(--ink);
+  }
+  th.sort { cursor: pointer; user-select: none; white-space: nowrap; }
+  th.sort:hover { color: var(--accent); }
+  th.sort[data-dir]::after { content: ' ▲'; font-size: 9px; }
+  th.sort[data-dir="desc"]::after { content: ' ▼'; font-size: 9px; }
+  tr.game-row { cursor: pointer; }
+  tr.offers-row > td { padding: 0 12px 12px; background: var(--bg); }
+  .offers { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 10px; padding-top: 10px; }
+  .offer {
+    display: flex; gap: 10px; padding: 8px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px; text-decoration: none;
+    color: var(--ink); align-items: center;
+  }
+  .offer:hover { border-color: var(--accent); text-decoration: none; }
+  .offer img, .offer .noimg { width: 52px; height: 52px; object-fit: cover;
+    border-radius: 8px; background: var(--surface-2, var(--bg)); flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; color: var(--ink-3); }
+  .offer .t { font-size: 12.5px; line-height: 1.35; color: var(--ink-2);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .offer .p { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 14px; }
+  .offer .p.bargain { color: var(--strong-ink); }
+  .offer .when { font-size: 11px; color: var(--ink-3); }
+  .offers .empty-offers { grid-column: 1/-1; color: var(--ink-3); font-size: 13px; padding: 8px 0; }
 </style>
 </head>
 <body>
@@ -140,13 +169,19 @@
   <div class="deals" id="deals"><div class="empty">Jeszcze nic — pierwszy przebieg buduje bazę cen.</div></div>
 
   <h2>Śledzone gry</h2>
+  <div class="tablebar">
+    <input id="gameFilter" type="search" placeholder="Filtruj gry…" aria-label="Filtruj śledzone gry">
+    <span class="muted" id="gameCount"></span>
+  </div>
   <div class="table-scroll">
   <table>
     <thead><tr>
-      <th>Gra</th><th>Zapytanie</th>
-      <th class="num">Mediana rynku</th><th class="num">Próbka</th>
-      <th class="num">Widziane</th><th class="num">Okazje</th>
-      <th class="num">Najtańsza teraz</th>
+      <th class="sort" data-k="title">Gra</th><th>Zapytanie</th>
+      <th class="num sort" data-k="median">Mediana rynku</th>
+      <th class="num sort" data-k="sampleSize">Próbka</th>
+      <th class="num sort" data-k="seenCount">Widziane</th>
+      <th class="num sort" data-k="dealCount">Okazje</th>
+      <th class="num sort" data-k="cheapest">Najtańsza teraz</th>
       <th class="num">Twój próg</th><th></th>
     </tr></thead>
     <tbody id="games"></tbody>
@@ -211,11 +246,55 @@ function renderDeals(deals) {
     </div>`).join('');
 }
 
+let sortKey = null, sortDir = 'asc', gameFilterText = '';
+const expanded = new Set();
+const offersCache = new Map();
+
+function sortValue(g, key) {
+  if (key === 'cheapest') return g.cheapest ? g.cheapest.price : Infinity;
+  if (key === 'title') return g.title.toLowerCase();
+  return g[key] ?? -1;
+}
+
+function offersHtml(q) {
+  const data = offersCache.get(q);
+  if (!data) return '<div class="empty-offers">Ładowanie ofert…</div>';
+  if (!data.offers.length) return '<div class="empty-offers">Brak wiarygodnych ofert z ostatnich 7 dni.</div>';
+  return data.offers.map(o => `
+    <a class="offer" href="${esc(o.url)}" target="_blank" rel="noopener" title="${esc(o.title)}">
+      ${o.photoUrl ? `<img src="${esc(o.photoUrl)}" alt="" loading="lazy">` : '<div class="noimg">🎮</div>'}
+      <div>
+        <div class="p ${o.bargain ? 'bargain' : ''}">${o.bargain ? '🔥 ' : ''}${fmt.format(o.price)} ${esc(o.currency)}</div>
+        <div class="t">${esc(o.title)}</div>
+        <div class="when">widziane ${ago(o.firstSeen)}</div>
+      </div>
+    </a>`).join('');
+}
+
+async function loadOffers(q) {
+  const r = await fetch('/api/games/' + encodeURIComponent(q) + '/offers');
+  if (r.ok) {
+    offersCache.set(q, await r.json());
+    if (lastData) renderGames(lastData.games);
+  }
+}
+
 function renderGames(games) {
-  const tbody = document.getElementById('games');
-  tbody.innerHTML = games.map(g => `
-    <tr>
-      <td>${esc(g.title)}</td>
+  let rows = games.filter(g =>
+    !gameFilterText
+    || g.title.toLowerCase().includes(gameFilterText)
+    || g.query.toLowerCase().includes(gameFilterText));
+  if (sortKey) {
+    rows = [...rows].sort((a, b) => {
+      const va = sortValue(a, sortKey), vb = sortValue(b, sortKey);
+      const c = va < vb ? -1 : va > vb ? 1 : 0;
+      return sortDir === 'asc' ? c : -c;
+    });
+  }
+  document.getElementById('gameCount').textContent = `${rows.length}/${games.length}`;
+  document.getElementById('games').innerHTML = rows.map(g => `
+    <tr class="game-row" data-q="${esc(g.query)}">
+      <td>${expanded.has(g.query) ? '▾' : '▸'} ${esc(g.title)}</td>
       <td class="muted">${esc(g.query)}</td>
       <td class="num">${g.median != null ? fmt.format(g.median) : '<span class="muted">za mało danych</span>'}</td>
       <td class="num muted">${g.sampleSize}</td>
@@ -228,8 +307,29 @@ function renderGames(games) {
       <td class="num"><input class="price" type="number" min="0" step="0.01"
         value="${g.maxPrice ?? ''}" placeholder="—" data-q="${esc(g.query)}"></td>
       <td><button class="del" title="Usuń" data-q="${esc(g.query)}">✕</button></td>
-    </tr>`).join('');
+    </tr>
+    ${expanded.has(g.query) ? `<tr class="offers-row"><td colspan="9"><div class="offers">${offersHtml(g.query)}</div></td></tr>` : ''}`).join('');
 }
+
+document.querySelector('thead').addEventListener('click', e => {
+  const th = e.target.closest('th.sort'); if (!th) return;
+  const key = th.dataset.k;
+  if (sortKey === key) {
+    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortKey = key;
+    sortDir = key === 'title' ? 'asc' : 'desc';
+  }
+  for (const x of document.querySelectorAll('th.sort'))
+    x.removeAttribute('data-dir');
+  th.setAttribute('data-dir', sortDir);
+  if (lastData) renderGames(lastData.games);
+});
+
+document.getElementById('gameFilter').addEventListener('input', e => {
+  gameFilterText = e.target.value.trim().toLowerCase();
+  if (lastData) renderGames(lastData.games);
+});
 
 function renderBlocklist(list) {
   const row = document.getElementById('blockrow');
@@ -333,10 +433,24 @@ document.getElementById('games').addEventListener('change', async e => {
 });
 
 document.getElementById('games').addEventListener('click', async e => {
-  const b = e.target.closest('button.del'); if (!b) return;
-  if (!confirm(`Przestać śledzić "${b.dataset.q}"?`)) return;
-  await fetch('/api/games/' + encodeURIComponent(b.dataset.q), { method: 'DELETE' });
-  refresh();
+  const b = e.target.closest('button.del');
+  if (b) {
+    if (!confirm(`Przestać śledzić "${b.dataset.q}"?`)) return;
+    await fetch('/api/games/' + encodeURIComponent(b.dataset.q), { method: 'DELETE' });
+    refresh();
+    return;
+  }
+  // Klik w wiersz (poza linkiem/inputem) rozwija top 5 ofert tej gry.
+  if (e.target.closest('a, input, button')) return;
+  const row = e.target.closest('tr.game-row'); if (!row) return;
+  const q = row.dataset.q;
+  if (expanded.has(q)) {
+    expanded.delete(q);
+  } else {
+    expanded.add(q);
+    if (!offersCache.has(q)) loadOffers(q);
+  }
+  if (lastData) renderGames(lastData.games);
 });
 
 document.getElementById('addForm').addEventListener('submit', async e => {

@@ -61,6 +61,13 @@ public class MatchingTests
     [InlineData("Persona 5 Royal Japan import")]
     [InlineData("Zelda Breath of the Wild JPN")]
     [InlineData("Mario Kart 8 wersja azjatycka")]
+    [InlineData("Schlüsselanhänger Zelda Nintendo")]
+    [InlineData("Plakát Super Mario Odyssey")]
+    [InlineData("Carte postale Animal Crossing")]
+    [InlineData("Mario Kart Spielzeug Set")]
+    [InlineData("Funda protectora Nintendo Switch Zelda")]
+    [InlineData("Kirby plüss figura")]
+    [InlineData("Zelda samolepky nálepky set")]
     public void MerchAndWrongMediaAreFilteredOut(string title) =>
         Assert.False(DealEvaluator.IsRelevant(title));
 
@@ -68,6 +75,8 @@ public class MatchingTests
     [InlineData("Pokemon Sword Nintendo Switch stan idealny")]
     [InlineData("Mario Kart 8 Deluxe Switch komplet")]
     [InlineData("Zelda Tears of the Kingdom, folia")]
+    [InlineData("Cassette Beasts Nintendo Switch")]
+    [InlineData("Disco Elysium Final Cut Switch")]
     public void RealGameListingsPassTheFilter(string title) =>
         Assert.True(DealEvaluator.IsRelevant(title));
 

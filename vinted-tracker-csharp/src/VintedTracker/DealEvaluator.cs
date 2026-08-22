@@ -66,40 +66,71 @@ public static class DealEvaluator
     /// Frazy, po których odrzucamy ofertę jako akcesorium/dodatek, nie grę.
     /// Porównywane bez wielkości liter.
     /// </summary>
+    /// <summary>
+    /// Rdzenie słów-gruzu, porównywane po złożeniu diakrytyków (á→a, ł→l),
+    /// więc jeden rdzeń łapie odmiany i warianty z języków całej UE —
+    /// Vinted PL pokazuje też oferty z zagranicy. Wpis ze spacjami wymaga
+    /// granicy słowa (" box " nie łapie "xbox").
+    /// </summary>
     public static readonly IReadOnlyList<string> AccessoryKeywords =
     [
-        // akcesoria i etui (rdzenie słów — polska odmiana nie psuje dopasowania)
-        "etui", "case", "pokrowiec", "steelbook", "poradnik", "przewodnik", "guide",
-        "kontroler", "pad ", "joy-con", "joycon", "konsola",
-        // merch
-        "figur", "amiibo", "plakat", "poster", "poszter", "brelo", "keychain",
-        "przypink", " pin ", "pins", "naklejk", "sticker", "skin", "kubek",
-        "koszulk", "t-shirt", "tshirt", "bluza", "maskotka", "pluszak",
-        "magnet", "magnes", " bag ", "torba", "torebka", "plecak", "saszetka",
-        "podkładk", "podkladk", "podstawk", "moneta", " coin", "metal plate",
-        "pocztówk", "pocztowk", "postcard", "kalendarz", "zabawk", "mcdonald",
-        "happy meal", "miecze",
-        // puste pudełka / niekompletne
-        "karton", "sam box", "box only", " box ", "pudełko", "pudelko", "bez gry",
-        // karty, planszówki, książki, muzyka, film — nie ta półka
-        "karty", " karta ", " card", "carti", "tcg", "planszow", "board game",
-        "książka", "ksiazka", "soundtrack", " ost ", "vinyl", "winyl",
+        // etui / pokrowce / szkła (PL, EN, DE, FR, IT, ES, NL, CZ)
+        "etui", "case", "pokrowiec", "tasche", " hoes", " funda", "custodia",
+        " obal", "steelbook", "szklo", "hartowan", "protector",
+        // sprzęt: kontrolery, konsole, kable, ładowarki, uchwyty
+        "kontroler", "controller", "gamepad", "joystick", "manette", " mando ",
+        "ovladac", "pad ", "joy-con", "joycon", "konsol", "consol", " dock",
+        "ladowark", "charger", "adapter", "kabel", "cable", "grip", "silikon",
+        "silicon",
+        // figurki / pluszaki / maskotki (EN/DE/SE figur, EE figuur, FR/ES/IT peluche…)
+        "figur", "figuur", "amiibo", "maskotka", "mascot", "pluszak", "plush",
+        "plusch", "pluss", "peluche", "knuffel",
+        // plakaty / naklejki / przypinki / breloczki
+        "plakat", "poster", "poszter", "affiche", "juliste",
+        "naklejk", "sticker", "aufkleber", "autocollant", "adesiv", "pegatina",
+        "samolepk", "nalepk", "matrica", "klisterm",
+        "przypink", " pin ", "pins", "badge", "znaczk",
+        "brelo", "keychain", "keyring", "anhanger", "porte-cle", "portachiav",
+        "llavero", "sleutelh", "kulcstart", "klicenka",
+        // kubki / ubrania / torby / drobny merch
+        "kubek", " mug ", "tasse", " taza", "tazza", " mok ", "hrnek", "hrncek",
+        "bogre", "koszulk", "t-shirt", "tshirt", " shirt", "tricou", "maglietta",
+        "camiseta", "tricko", "bluza", "hoodie", "mikina",
+        " bag ", "torba", "torebka", "plecak", "rucksack", "backpack", "mochila",
+        " borsa", "saszetka", "skin", "magnet", "magnes", "aimant",
+        "podkladk", "podstawk", "moneta", " coin", "metal plate", "plakietk",
+        "kalendarz", "calendar", "kalender", "pocztowk", "postcard", "postkarte",
+        "carte post", "cartolina", "pohlednice", "kepeslap", "vykort", "ansichtk",
+        // zabawki
+        "zabawk", "mcdonald", "happy meal", "spielzeug", "jouet", "juguete",
+        "giocattolo", "speelgoed", "hracka", " toy ", "toys", "miecze",
+        // puste pudełka / sama płyta / niekompletne
+        "karton", "sam box", "box only", "empty box", " box ", "pudelko",
+        "krabice", " doboz", "boite", "scatola", "bez gry",
+        "kun disk", "disc only", "disk only", "sama plyt", "solo disco",
+        // karty i planszówki
+        "karty", " karta ", " card", " carte", "karten", "kaart", "kartya",
+        "carti", " kort ", "kortti", "tcg", "planszow", "board game",
+        // książki / komiksy / muzyka / film
+        "ksiazka", " libro", " livre", " buch ", "kniha", "konyv", "artbook",
+        "art book", "manga", "komiks", "comic", "poradnik", "przewodnik", "guide",
+        "soundtrack", " ost ", "vinyl", "winyl", "vinil", "schallplatte",
         " cd ", " dvd", "blu-ray", "bluray",
         // wersje cyfrowe
         " kod ", "klucz", "digital", "cyfrow", "steam gift",
-        // importy z innych regionów — inna okładka/język = inna wartość rynkowa,
-        // psują mediany polskiego rynku
-        "japo", "japan", "jpn", "azjatyck", "korea",
+        // importy z innych regionów — inna okładka/język = inna wartość rynkowa
+        "japo", "japan", "jpn", "giappon", "azjatyck", " asia", "korea",
     ];
 
     /// <param name="extraKeywords">Gruz-lista użytkownika (dashboard, przycisk 🚫)
     /// dokładana do wbudowanych słów kluczowych.</param>
     public static bool IsRelevant(string title, IReadOnlyCollection<string>? extraKeywords = null)
     {
-        var t = " " + title.ToLowerInvariant() + " ";
+        var t = " " + TitleNormalizer.StripDiacritics(title.ToLowerInvariant()) + " ";
         if (AccessoryKeywords.Any(t.Contains))
             return false;
-        return extraKeywords is null || !extraKeywords.Any(k => t.Contains(k.ToLowerInvariant()));
+        return extraKeywords is null
+            || !extraKeywords.Any(k => t.Contains(TitleNormalizer.StripDiacritics(k.ToLowerInvariant())));
     }
 
     public static DealVerdict Evaluate(

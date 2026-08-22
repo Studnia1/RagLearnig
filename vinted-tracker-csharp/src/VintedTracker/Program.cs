@@ -159,6 +159,27 @@ public static class Program
         app.MapDelete("/api/games/{query}", (string query) =>
             watchlist.Remove(query) ? Results.NoContent() : Results.NotFound());
 
+        app.MapGet("/api/games/{query}/offers", (string query) =>
+        {
+            var gameKey = "watch:" + query.ToLowerInvariant();
+            var stats = store.StatsFor(gameKey);
+            var floor = stats.Median is { } med
+                ? med * DealEvaluator.SuspiciousRatio
+                : DealEvaluator.MinSanePrice;
+            var offers = store.TopOffersFor(gameKey, floor).Select(o => new
+            {
+                o.Id,
+                o.Title,
+                o.Price,
+                o.Currency,
+                o.Url,
+                o.PhotoUrl,
+                FirstSeen = DateTimeOffset.FromUnixTimeSeconds(o.FirstSeenUnix),
+                Bargain = stats.Median is { } m && o.Price <= m * DealEvaluator.DealRatio,
+            });
+            return Results.Ok(new { Offers = offers, stats.Median });
+        });
+
         app.MapPost("/api/check", (TrackerEngine eng) =>
         {
             if (eng.CycleInProgress)
