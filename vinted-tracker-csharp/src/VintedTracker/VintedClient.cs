@@ -94,6 +94,9 @@ public sealed class VintedClient
         if (await TryTreeDiscoveryAsync(ct) is { } fromTree)
             return (new[] { fromTree.Id }, $"{fromTree.Title} (#{fromTree.Id})");
 
+        if (await DiscoverFromHtmlAsync(ct) is { } fromHtml)
+            return fromHtml;
+
         string[] probes =
         [
             "gra nintendo switch", "gra playstation 5", "gra playstation 4",
@@ -162,6 +165,54 @@ public sealed class VintedClient
         return confirmed.Count > 0
             ? (confirmed, $"ze szczegółów ofert: {string.Join(",", confirmed)}")
             : null;
+    }
+
+    /// <summary>
+    /// Wyciąga katalogi gier z HTML-u strony katalogu: nawigacja kategorii
+    /// (to samo, co widzi przeglądarka) zawiera linki <c>catalog/1234-slug</c>.
+    /// Bierzemy ID o slugach gier, preferując gry wideo nad planszówkami.
+    /// </summary>
+    public async Task<(IReadOnlyList<int> Ids, string Description)?> DiscoverFromHtmlAsync(
+        CancellationToken ct = default)
+    {
+        if (!_authenticated)
+            await RefreshSessionAsync(ct);
+        foreach (var path in new[] { "/catalog", "/" })
+        {
+            string html;
+            try
+            {
+                using var resp = await _http.GetAsync(_baseUrl + path, ct);
+                if (!resp.IsSuccessStatusCode)
+                    continue;
+                html = await resp.Content.ReadAsStringAsync(ct);
+            }
+            catch (HttpRequestException)
+            {
+                continue;
+            }
+
+            var hits = new Dictionary<int, string>();
+            foreach (System.Text.RegularExpressions.Match m in
+                System.Text.RegularExpressions.Regex.Matches(html, @"catalog/(\d+)-([a-z0-9\-]+)"))
+            {
+                var slug = m.Groups[2].Value;
+                if (slug.Contains("gry") || slug.Contains("konsol")
+                    || slug.Contains("video-game") || slug.Contains("games"))
+                    hits.TryAdd(int.Parse(m.Groups[1].Value), slug);
+            }
+            if (hits.Count == 0)
+                continue;
+
+            var video = hits
+                .Where(kv => kv.Value.Contains("wideo") || kv.Value.Contains("video") || kv.Value.Contains("konsol"))
+                .ToDictionary(kv => kv.Key, kv => kv.Value);
+            var chosen = (video.Count > 0 ? video : hits).Keys.Take(6).ToList();
+            var described = string.Join(", ", chosen.Select(id => $"#{id} ({hits[id]})"));
+            Console.WriteLine($"[info] HTML ({path}): znaleziono katalogi gier: {described}");
+            return (chosen, $"z HTML: {described}");
+        }
+        return null;
     }
 
     /// <summary>Katalog pojedynczej oferty ze strony szczegółów — wyniki

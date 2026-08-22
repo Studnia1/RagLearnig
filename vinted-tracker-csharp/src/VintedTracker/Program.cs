@@ -46,6 +46,9 @@ public static class Program
         {
             Console.WriteLine(await client.DebugProbeAsync("gra nintendo switch"));
             Console.WriteLine(await client.DebugProbeAsync("pokemon"));
+            Console.WriteLine(await client.DiscoverFromHtmlAsync() is { } h
+                ? $"HTML discovery OK: {h.Description}"
+                : "HTML discovery: nie znaleziono linków katalogów gier w HTML");
             return 0;
         }
 
