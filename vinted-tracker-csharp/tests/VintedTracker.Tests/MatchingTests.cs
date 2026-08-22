@@ -26,8 +26,46 @@ public class MatchingTests
     [Theory]
     [InlineData("Big Brain Academy - Gra na Nintendo DS", "ds")]
     [InlineData("Nintendo 3DS Zelda Ocarina of Time", "3ds")]
+    [InlineData("Romancing Saga 2 sfc NTSC-J", "ntsc")]
+    [InlineData("Romancing Saga 2 sfc", "snes")]
+    [InlineData("Romancing SaGa 2 – Super Famicom (SNES) Japan", "snes")]
+    [InlineData("Romancing SaGa Minstrel Song NTSC-J #2", "ntsc")]
+    [InlineData("Tales of vesperia japońska ps3 best hits", "ps3")]
     public void HandheldPlatformsAreDetected(string title, string expected) =>
         Assert.Equal(expected, TitleNormalizer.DetectPlatform(title));
+
+    [Fact]
+    public void WatchGamesDefaultToSwitchAndRejectOtherPlatforms()
+    {
+        var matcher = new GameMatcher([
+            GamePattern.FromWatch(new GameWatch { Title = "Suikoden I&II HD", Query = "suikoden" }),
+        ]);
+        // Brak platformy w zapytaniu = domyślnie Switch → wydanie PS2 odpada.
+        Assert.Null(matcher.Match("Genso Suikoden 3 ps2 playstation 2 ntsc-j", "ps2"));
+        Assert.NotNull(matcher.Match("Suikoden I&II HD Remaster Nintendo Switch", "switch"));
+        Assert.NotNull(matcher.Match("Suikoden I&II HD Remaster", null));
+    }
+
+    [Theory]
+    [InlineData("Naklejki Nintendo Fire Emblem Three Hopes Kolekcjonerskie")]
+    [InlineData("Mario&Luigi brothership pins")]
+    [InlineData("Mario + Rabbids Kingdom Battle – The Official Soundtrack CD– originál")]
+    [InlineData("Monster Hunter Stories 2 promó poszter")]
+    [InlineData("Zabawki McDonald's Super Mario Bros Mario Kart 8 Deluxe")]
+    [InlineData("Final Fantasy IX board game")]
+    [InlineData("Final Fantasy VII dvd")]
+    [InlineData("The Legend of Zelda Tears of the Kingdom coin")]
+    [InlineData("Pocztówki Nintendo Triangle Strategy")]
+    [InlineData("Super Mario RPG Princess Peach pin na plecak")]
+    public void MerchAndWrongMediaAreFilteredOut(string title) =>
+        Assert.False(DealEvaluator.IsRelevant(title));
+
+    [Theory]
+    [InlineData("Pokemon Sword Nintendo Switch stan idealny")]
+    [InlineData("Mario Kart 8 Deluxe Switch komplet")]
+    [InlineData("Zelda Tears of the Kingdom, folia")]
+    public void RealGameListingsPassTheFilter(string title) =>
+        Assert.True(DealEvaluator.IsRelevant(title));
 
     [Fact]
     public void CustomBlocklistKeywordFiltersListing()

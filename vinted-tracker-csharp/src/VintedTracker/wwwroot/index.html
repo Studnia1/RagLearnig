@@ -124,6 +124,7 @@
     <span class="status" id="status">Łączenie…</span>
     <button class="primary" id="checkNow">Sprawdź teraz</button>
     <button id="cheapestNow" title="Dla każdej śledzonej gry pobiera aktualnie najtańszą sensowną ofertę (ok. minuta)">💰 Najtańsze teraz</button>
+    <button id="copyLogs" title="Kopiuje diagnostykę do schowka — wklej ją przy zgłaszaniu problemu">📋 Logi</button>
   </header>
 
   <h2>Okazje</h2>
@@ -283,6 +284,18 @@ document.getElementById('cheapestNow').addEventListener('click', async e => {
       e.target.textContent = '💰 Najtańsze teraz';
     }
   }, 3000);
+});
+
+document.getElementById('copyLogs').addEventListener('click', async e => {
+  const r = await fetch('/api/logs');
+  const text = await r.text();
+  try {
+    await navigator.clipboard.writeText(text);
+    e.target.textContent = '📋 Skopiowane!';
+  } catch {
+    window.prompt('Skopiuj ręcznie (Ctrl+C):', text);
+  }
+  setTimeout(() => { e.target.textContent = '📋 Logi'; }, 2000);
 });
 
 document.getElementById('deals').addEventListener('click', async e => {

@@ -143,14 +143,14 @@ public sealed class VintedClient
             }
             catch (HttpRequestException e)
             {
-                Console.Error.WriteLine($"[warn] Sonda \"{probe}\" nieudana: {e.Message}");
+                Log.Warn($"Sonda \"{probe}\" nieudana: {e.Message}");
                 continue;
             }
             var local = results
                 .Where(r => r.CatalogId is not null)
                 .GroupBy(r => r.CatalogId!.Value)
                 .ToDictionary(g => g.Key, g => g.Count());
-            Console.WriteLine($"[info] Sonda \"{probe}\": ofert {results.Count}, z catalog_id {local.Values.Sum()}");
+            Log.Info($"Sonda \"{probe}\": ofert {results.Count}, z catalog_id {local.Values.Sum()}");
             // Wyniki wyszukiwania nie niosą już catalog_id — zbieramy ID ofert,
             // żeby w razie czego doczytać katalog z ich stron szczegółów.
             sampleItemIds.AddRange(results.Take(4).Select(r => r.Id));
@@ -185,7 +185,7 @@ public sealed class VintedClient
             }
             await Task.Delay(TimeSpan.FromSeconds(0.7 + Random.Shared.NextDouble() * 0.8), ct);
         }
-        Console.WriteLine($"[info] Szczegóły ofert: catalog_id z {detailCounts.Values.Sum()} ofert, " +
+        Log.Info($"Szczegóły ofert: catalog_id z {detailCounts.Values.Sum()} ofert, " +
                           $"katalogi: {string.Join(",", detailCounts.Keys)}");
         var confirmed = detailCounts.Where(kv => kv.Value >= 2).Select(kv => kv.Key)
             .OrderByDescending(id => detailCounts[id]).Take(6).ToList();
@@ -238,7 +238,7 @@ public sealed class VintedClient
                 .ToDictionary(kv => kv.Key, kv => kv.Value);
             var chosen = (video.Count > 0 ? video : hits).Keys.Take(6).ToList();
             var described = string.Join(", ", chosen.Select(id => $"#{id} ({hits[id]})"));
-            Console.WriteLine($"[info] HTML ({path}): znaleziono katalogi gier: {described}");
+            Log.Info($"HTML ({path}): znaleziono katalogi gier: {described}");
             return (chosen, $"z HTML: {described}");
         }
         return null;

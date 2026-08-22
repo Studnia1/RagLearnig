@@ -56,6 +56,7 @@ public static class Program
         var watchlist = new WatchlistStore(config.Defaults.WatchlistPath);
         var notifier = new Notifier();
         var engine = new TrackerEngine(config, client, store, watchlist, notifier);
+        engine.LoadPersistedCheapest();
 
         if (once)
         {
@@ -175,6 +176,19 @@ public static class Program
         app.MapDelete("/api/blocklist/{keyword}", (string keyword) =>
             store.RemoveBlocklistKeyword(keyword) ? Results.NoContent() : Results.NotFound());
 
+        app.MapGet("/api/logs", () =>
+        {
+            var header =
+                $"=== Vinted Games Tracker — diagnostyka {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n" +
+                $"baza: {store.ItemCount()} ofert, gier auto: {store.AutoGameCount()}, " +
+                $"watchlista: {watchlist.Snapshot().Count}, gruz-lista: [{string.Join(", ", store.GetBlocklist())}]\n" +
+                $"katalog: {engine.CatalogInfo ?? "?"} · ostatni cykl: {engine.LastCycleFinished:HH:mm:ss} " +
+                $"({engine.LastCyclePages} str., +{engine.LastCycleNewItems})" +
+                $"{(engine.LastError is not null ? $" · błąd: {engine.LastError}" : "")}\n" +
+                "=== Logi (ostatnie linie) ===\n";
+            return Results.Text(header + Log.Dump(), "text/plain; charset=utf-8");
+        });
+
         Console.WriteLine($"Dashboard: {config.Defaults.ListenUrl}");
         await app.RunAsync();
         return 0;
@@ -203,13 +217,13 @@ public static class Program
                 }
                 catch (Exception e)
                 {
-                    Console.Error.WriteLine($"[error] Przebieg zakończony błędem — próbuję dalej: {e.Message}");
+                    Log.Error($"Przebieg zakończony błędem — próbuję dalej: {e.Message}");
                 }
 
                 blockedStreak = engine.LastCycleBlocked ? blockedStreak + 1 : 0;
                 var seconds = Math.Min(intervalSeconds * Math.Pow(2, blockedStreak), 1800);
                 if (blockedStreak > 0)
-                    Console.WriteLine($"[info] Blokada anty-bot — następna próba za {seconds / 60:0.#} min");
+                    Log.Info($"Blokada anty-bot — następna próba za {seconds / 60:0.#} min");
                 var sleep = TimeSpan.FromSeconds(seconds + Random.Shared.NextDouble() * seconds * 0.2);
                 try { await Task.Delay(sleep, ct); }
                 catch (OperationCanceledException) { break; }

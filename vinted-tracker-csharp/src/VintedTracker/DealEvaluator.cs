@@ -68,14 +68,25 @@ public static class DealEvaluator
     /// </summary>
     public static readonly IReadOnlyList<string> AccessoryKeywords =
     [
-        "etui", "case", "pokrowiec", "steelbook", "poradnik", "przewodnik",
-        "figurka", "amiibo", "plakat", "brelok", "przypinka", "naklejka",
-        "skin", "kubek", "koszulka", "bluza", "maskotka", "pluszak",
-        "karton", "sam box", "box only", " box ", "pudełko", "pudelko", "bez gry",
+        // akcesoria i etui (rdzenie słów — polska odmiana nie psuje dopasowania)
+        "etui", "case", "pokrowiec", "steelbook", "poradnik", "przewodnik", "guide",
         "kontroler", "pad ", "joy-con", "joycon", "konsola",
+        // merch
+        "figur", "amiibo", "plakat", "poster", "poszter", "brelo", "keychain",
+        "przypink", " pin ", "pins", "naklejk", "sticker", "skin", "kubek",
+        "koszulk", "t-shirt", "tshirt", "bluza", "maskotka", "pluszak",
+        "magnet", "magnes", " bag ", "torba", "torebka", "plecak", "saszetka",
+        "podkładk", "podkladk", "podstawk", "moneta", " coin", "metal plate",
+        "pocztówk", "pocztowk", "postcard", "kalendarz", "zabawk", "mcdonald",
+        "happy meal", "miecze",
+        // puste pudełka / niekompletne
+        "karton", "sam box", "box only", " box ", "pudełko", "pudelko", "bez gry",
+        // karty, planszówki, książki, muzyka, film — nie ta półka
+        "karty", " karta ", " card", "carti", "tcg", "planszow", "board game",
+        "książka", "ksiazka", "soundtrack", " ost ", "vinyl", "winyl",
+        " cd ", " dvd", "blu-ray", "bluray",
+        // wersje cyfrowe
         " kod ", "klucz", "digital", "cyfrow", "steam gift",
-        "magnet", " bag ", "torba", "torebka", "podkładk", "podkladk",
-        "miecze", "karty", " karta ", " card", "tcg",
     ];
 
     /// <param name="extraKeywords">Gruz-lista użytkownika (dashboard, przycisk 🚫)

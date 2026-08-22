@@ -274,6 +274,52 @@ public sealed class SqliteStore : IDisposable
     public long ItemCount() => ScalarLong("SELECT COUNT(*) FROM items");
     public long AutoGameCount() => ScalarLong("SELECT COUNT(*) FROM auto_games");
 
+    public sealed record SweepRow(long Id, string Title, bool Relevant, string? GameKey);
+
+    /// <summary>Wiersze do ponownej oceny po zmianie wbudowanych filtrów.</summary>
+    public IReadOnlyList<SweepRow> SnapshotForSweep()
+    {
+        lock (_lock)
+        {
+            using var cmd = _conn.CreateCommand();
+            cmd.CommandText = "SELECT id, title, relevant, game_key FROM items WHERE relevant = 1 OR game_key IS NOT NULL";
+            var rows = new List<SweepRow>();
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+                rows.Add(new SweepRow(
+                    reader.GetInt64(0), reader.GetString(1), reader.GetInt32(2) == 1,
+                    reader.IsDBNull(3) ? null : reader.GetString(3)));
+            return rows;
+        }
+    }
+
+    /// <summary>Stosuje wynik porządków: gruz traci status i wypada z median,
+    /// błędnie dopasowane oferty zostają odpięte od gier.</summary>
+    public void ApplySweep(IReadOnlyList<long> irrelevantIds, IReadOnlyList<long> unmatchIds)
+    {
+        lock (_lock)
+        {
+            using var tx = _conn.BeginTransaction();
+            foreach (var chunk in irrelevantIds.Chunk(500))
+            {
+                using var cmd = _conn.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText =
+                    $"UPDATE items SET relevant = 0, tier = 'None' WHERE id IN ({string.Join(',', chunk)})";
+                cmd.ExecuteNonQuery();
+            }
+            foreach (var chunk in unmatchIds.Chunk(500))
+            {
+                using var cmd = _conn.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText =
+                    $"UPDATE items SET game_key = NULL, game_title = NULL, tier = 'None' WHERE id IN ({string.Join(',', chunk)})";
+                cmd.ExecuteNonQuery();
+            }
+            tx.Commit();
+        }
+    }
+
     /// <summary>Gruz-lista użytkownika: słowa kluczowe oznaczające akcesoria/śmieci.</summary>
     public IReadOnlyList<string> GetBlocklist()
     {

@@ -34,6 +34,10 @@ public static class TitleNormalizer
         ("xbox360", "xbox360"), ("xboxone", "xbox-one"), ("xbox1", "xbox-one"),
         ("psvita", "psvita"), ("gameboyadvance", "gba"), ("gameboy", "gb"),
         ("wiiu", "wiiu"), ("nintendo3ds", "3ds"), ("nintendods", "ds"),
+        ("superfamicom", "snes"), ("famicom", "snes"), ("supernintendo", "snes"),
+        ("gamecube", "gamecube"), ("playstation1", "ps1"),
+        // NTSC-J w tytule = import retro, nie wydanie na współczesną konsolę
+        ("ntscj", "ntsc"),
     ];
 
     /// <summary>Znaczniki jednotokenowe — porównywane z całym tokenem, nie
@@ -47,6 +51,8 @@ public static class TitleNormalizer
         ["vita"] = "psvita", ["psp"] = "psp",
         ["wiiu"] = "wiiu", ["wii"] = "wii",
         ["3ds"] = "3ds", ["nds"] = "ds", ["ds"] = "ds", ["gba"] = "gba",
+        ["snes"] = "snes", ["sfc"] = "snes", ["n64"] = "n64", ["ngc"] = "gamecube",
+        ["ps1"] = "ps1", ["psx"] = "ps1", ["psone"] = "ps1", ["ntsc"] = "ntsc",
         ["pc"] = "pc",
     };
 
@@ -126,7 +132,9 @@ public sealed record GamePattern(
         return new GamePattern(
             Key: "watch:" + watch.Query.ToLowerInvariant(),
             Title: watch.Title,
-            Platform: TitleNormalizer.DetectPlatform(watch.Query),
+            // Domyślnie Switch: bez tego gra bez platformy w zapytaniu łapała
+            // wydania na PS2/SNES/DVD itp. Nadpisywalne per gra w games.json.
+            Platform: watch.Platform ?? TitleNormalizer.DetectPlatform(watch.Query) ?? "switch",
             MaxPrice: watch.MaxPrice,
             TokenSets: sets);
     }

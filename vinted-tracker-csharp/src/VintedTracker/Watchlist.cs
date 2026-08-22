@@ -10,6 +10,8 @@ public sealed class GameWatch
     [JsonPropertyName("maxPrice")] public decimal? MaxPrice { get; set; }
     /// <summary>Dodatkowe frazy dopasowujące tę samą grę (np. skróty: "totk", "acnh").</summary>
     [JsonPropertyName("aliases")] public List<string>? Aliases { get; set; }
+    /// <summary>Platforma gry (domyślnie "switch"). Ustaw, gdy śledzisz wydanie na inną konsolę.</summary>
+    [JsonPropertyName("platform")] public string? Platform { get; set; }
 }
 
 /// <summary>

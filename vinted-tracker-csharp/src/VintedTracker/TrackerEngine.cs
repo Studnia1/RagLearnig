@@ -33,6 +33,46 @@ public sealed class TrackerEngine(
     public bool CheapestScanInProgress { get; private set; }
 
     private IReadOnlyList<string> _blocklist = [];
+    private int _cJunk, _cWatch, _cAuto, _cDeal, _cStrong, _cSusp;
+
+    /// <summary>Bump przy każdej zmianie wbudowanych filtrów/platform — wymusza
+    /// jednorazowe porządki w bazie przy najbliższym cyklu.</summary>
+    private const string FilterVersion = "2";
+
+    /// <summary>Wyniki "najtańsze teraz" przeżywają restart (meta w SQLite).</summary>
+    public void LoadPersistedCheapest()
+    {
+        if (store.GetMeta("cheapest") is not { } raw)
+            return;
+        var saved = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, CheapestNow>>(raw)
+            ?? new Dictionary<string, CheapestNow>();
+        foreach (var (query, value) in saved)
+            Cheapest[query] = value;
+    }
+
+    private void PersistCheapest() =>
+        store.SetMeta("cheapest", System.Text.Json.JsonSerializer.Serialize(Cheapest.ToDictionary()));
+
+    private void RunSweepIfNeeded(GameMatcher matcher)
+    {
+        if (store.GetMeta("filter_version") == FilterVersion)
+            return;
+        var rows = store.SnapshotForSweep();
+        var irrelevant = new List<long>();
+        var unmatch = new List<long>();
+        foreach (var row in rows)
+        {
+            if (row.Relevant && !DealEvaluator.IsRelevant(row.Title, _blocklist))
+                irrelevant.Add(row.Id);
+            else if (row.GameKey is { } key && key.StartsWith("watch:")
+                && matcher.Match(row.Title, TitleNormalizer.DetectPlatform(row.Title))?.Key != key)
+                unmatch.Add(row.Id);
+        }
+        store.ApplySweep(irrelevant, unmatch);
+        store.SetMeta("filter_version", FilterVersion);
+        Log.Info($"Porządki po zmianie filtrów: {irrelevant.Count} ofert odfiltrowanych, " +
+                 $"{unmatch.Count} odpiętych od gier (przejrzano {rows.Count})");
+    }
 
     /// <summary>
     /// Skan na żądanie: dla każdej gry z watchlisty pobiera oferty posortowane
@@ -61,12 +101,13 @@ public sealed class TrackerEngine(
                 catch (VintedBlockedException e)
                 {
                     LastError = e.Message;
-                    Console.Error.WriteLine($"[warn] Skan najtańszych przerwany: {e.Message}");
+                    Log.Warn($"Skan najtańszych przerwany: {e.Message}");
+                    PersistCheapest();
                     return;
                 }
                 catch (Exception e) when (e is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
                 {
-                    Console.Error.WriteLine($"[warn] Najtańsza \"{game.Query}\" nieudana: {e.Message}");
+                    Log.Warn($"Najtańsza \"{game.Query}\" nieudana: {e.Message}");
                     continue;
                 }
 
@@ -93,6 +134,8 @@ public sealed class TrackerEngine(
 
                 await Task.Delay(TimeSpan.FromSeconds(1 + Random.Shared.NextDouble() * 1.5), ct);
             }
+            PersistCheapest();
+            Log.Info($"Skan najtańszych zakończony: wyniki dla {Cheapest.Count} gier");
         }
         finally
         {
@@ -120,6 +163,8 @@ public sealed class TrackerEngine(
             var matcher = new GameMatcher(watchlist.Snapshot().Select(GamePattern.FromWatch).ToList());
             var autoIndex = store.AutoGameIndex();
             _blocklist = store.GetBlocklist();
+            RunSweepIfNeeded(matcher);
+            _cJunk = _cWatch = _cAuto = _cDeal = _cStrong = _cSusp = 0;
 
             var pages = 0;
             var newItems = 0;
@@ -135,20 +180,20 @@ public sealed class TrackerEngine(
                 {
                     // Vinted nie pozwala stronicować głębiej niż ~1000 ofert —
                     // to naturalny koniec backfillu, nie błąd.
-                    Console.WriteLine($"[info] Limit stronicowania Vinted na stronie {page} — kończę przebieg");
+                    Log.Info($"Limit stronicowania Vinted na stronie {page} — kończę przebieg");
                     break;
                 }
                 catch (VintedBlockedException e)
                 {
                     LastCycleBlocked = true;
                     LastError = e.Message;
-                    Console.Error.WriteLine($"[warn] {e.Message}");
+                    Log.Warn($"{e.Message}");
                     break;
                 }
                 catch (Exception e) when (e is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
                 {
                     LastError = e.Message;
-                    Console.Error.WriteLine($"[error] Strona {page} katalogu nie powiodła się: {e.Message}");
+                    Log.Error($"Strona {page} katalogu nie powiodła się: {e.Message}");
                     break;
                 }
 
@@ -176,11 +221,14 @@ public sealed class TrackerEngine(
 
             var promoted = store.PromoteAutoGames(config.Defaults.AutoPromoteMinSample);
             if (promoted > 0)
-                Console.WriteLine($"[info] Auto-promocja: {promoted} nowych grup gier w słowniku");
+                Log.Info($"Auto-promocja: {promoted} nowych grup gier w słowniku");
 
             LastCyclePages = pages;
             LastCycleNewItems = newItems;
             LastCycleFinished = DateTimeOffset.UtcNow;
+            Log.Info($"Cykl: {pages} str., {newItems} nowych (gruz {_cJunk}, watchlista {_cWatch}, " +
+                     $"auto {_cAuto}); okazje: {_cStrong} mocnych, {_cDeal} zwykłych, {_cSusp} podejrzanych; " +
+                     $"baza {store.ItemCount()}");
         }
         finally
         {
@@ -210,7 +258,7 @@ public sealed class TrackerEngine(
             ct.ThrowIfCancellationRequested();
             if (seededThisCycle >= SeedBatchPerCycle)
             {
-                Console.WriteLine("[info] Limit zasiewania na cykl — reszta gier w kolejnych cyklach");
+                Log.Info("Limit zasiewania na cykl — reszta gier w kolejnych cyklach");
                 return;
             }
             var metaKey = "seeded:watch:" + game.Query.ToLowerInvariant();
@@ -227,12 +275,12 @@ public sealed class TrackerEngine(
             {
                 LastCycleBlocked = true;
                 LastError = e.Message;
-                Console.Error.WriteLine($"[warn] Zasiewanie przerwane: {e.Message}");
+                Log.Warn($"Zasiewanie przerwane: {e.Message}");
                 return;
             }
             catch (Exception e) when (e is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
             {
-                Console.Error.WriteLine($"[warn] Zasiewanie \"{game.Query}\" nieudane: {e.Message}");
+                Log.Warn($"Zasiewanie \"{game.Query}\" nieudane: {e.Message}");
                 continue;
             }
 
@@ -246,7 +294,7 @@ public sealed class TrackerEngine(
                 await ProcessListingAsync(listing, matcher, autoIndex, firstRun: true, ct);
             }
             store.SetMeta(metaKey, "1");
-            Console.WriteLine($"[info] Zasiano \"{game.Query}\": {added} ofert do bazy cen");
+            Log.Info($"Zasiano \"{game.Query}\": {added} ofert do bazy cen");
             await Task.Delay(TimeSpan.FromSeconds(1.5 + Random.Shared.NextDouble() * 1.5), ct);
         }
     }
@@ -261,6 +309,8 @@ public sealed class TrackerEngine(
         var relevant = DealEvaluator.IsRelevant(listing.Title, _blocklist);
         var normKey = TitleNormalizer.NormKey(listing.Title);
         var platform = TitleNormalizer.DetectPlatform(listing.Title);
+        if (!relevant)
+            _cJunk++;
 
         string? gameKey = null;
         string? gameTitle = null;
@@ -272,11 +322,13 @@ public sealed class TrackerEngine(
                 gameKey = watch.Key;
                 gameTitle = watch.Title;
                 maxPrice = watch.MaxPrice;
+                _cWatch++;
             }
             else if (autoIndex.TryGetValue((normKey, platform ?? ""), out var auto))
             {
                 gameKey = auto.Key;
                 gameTitle = auto.Title;
+                _cAuto++;
             }
         }
 
@@ -291,10 +343,20 @@ public sealed class TrackerEngine(
             listing.PhotoUrl, normKey, platform, gameKey, gameTitle, relevant,
             verdict.Tier, verdict.Score, verdict.ReferencePrice, verdict.Reasons));
 
+        switch (verdict.Tier)
+        {
+            case DealTier.Strong: _cStrong++; break;
+            case DealTier.Deal: _cDeal++; break;
+            case DealTier.Suspicious: _cSusp++; break;
+        }
+
         // Push tylko dla mocnych okazji z realną marżą — reszta ląduje w UI.
         var margin = verdict.ReferencePrice is { } r ? r - listing.Price : 0;
         if (!firstRun && verdict.Tier == DealTier.Strong && margin >= config.Defaults.MinMargin)
+        {
+            Log.Info($"PUSH: {gameTitle} — {listing.Price:0.00} {listing.Currency} (marża {margin:0.00})");
             await notifier.SendAsync(Notifier.FormatDeal(listing, gameTitle ?? "?", verdict), ct);
+        }
     }
 
     private async Task<IReadOnlyList<int>> EnsureCatalogAsync(CancellationToken ct)
@@ -324,7 +386,7 @@ public sealed class TrackerEngine(
                 store.SetMeta("catalog_ids", string.Join(",", found.Ids));
                 store.SetMeta("catalog_info", found.Description);
                 CatalogInfo = found.Description;
-                Console.WriteLine($"[info] Wykryto katalog gier: {found.Description}");
+                Log.Info($"Wykryto katalog gier: {found.Description}");
                 return found.Ids;
             }
             LastError = "Nie udało się wykryć katalogu gier (drzewo kategorii ani sondy wyszukiwania) — podaj catalogIds w config.json";
@@ -333,7 +395,7 @@ public sealed class TrackerEngine(
         {
             LastError = $"Auto-wykrycie katalogu nie powiodło się: {e.Message}";
         }
-        Console.Error.WriteLine($"[error] {LastError}");
+        Log.Error($"{LastError}");
         return [];
     }
 }
