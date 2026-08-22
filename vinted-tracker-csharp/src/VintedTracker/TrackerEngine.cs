@@ -47,6 +47,13 @@ public sealed class TrackerEngine(
                 {
                     listings = await client.CatalogPageAsync(catalogIds, page, ct: ct);
                 }
+                catch (HttpRequestException e) when (e.Message.Contains("Page offset is invalid"))
+                {
+                    // Vinted nie pozwala stronicować głębiej niż ~1000 ofert —
+                    // to naturalny koniec backfillu, nie błąd.
+                    Console.WriteLine($"[info] Limit stronicowania Vinted na stronie {page} — kończę przebieg");
+                    break;
+                }
                 catch (Exception e) when (e is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
                 {
                     LastError = e.Message;

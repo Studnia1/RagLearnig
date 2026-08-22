@@ -15,8 +15,9 @@ public sealed class Defaults
     /// z drzewa kategorii przy pierwszym cyklu.</summary>
     [JsonPropertyName("catalogIds")] public List<int> CatalogIds { get; init; } = [];
 
-    /// <summary>Ile stron katalogu wolno przejść w pierwszym przebiegu (backfill).</summary>
-    [JsonPropertyName("backfillPages")] public int BackfillPages { get; init; } = 20;
+    /// <summary>Ile stron katalogu wolno przejść w pierwszym przebiegu (backfill).
+    /// Vinted i tak ucina stronicowanie przy ~1000 ofert (10 stron po 96).</summary>
+    [JsonPropertyName("backfillPages")] public int BackfillPages { get; init; } = 10;
 
     /// <summary>Limit stron na zwykły cykl — bezpiecznik po dłuższym postoju.</summary>
     [JsonPropertyName("maxPagesPerCycle")] public int MaxPagesPerCycle { get; init; } = 5;
