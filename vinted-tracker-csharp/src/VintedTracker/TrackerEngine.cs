@@ -8,7 +8,8 @@ namespace VintedTracker;
 /// z bazy (oferta mogła się już sprzedać).</param>
 public sealed record CheapestNow(
     string ListingTitle, decimal Price, string Currency, string Url,
-    DateTimeOffset CheckedAt, bool Bargain, decimal? Median, bool Live = true);
+    DateTimeOffset CheckedAt, bool Bargain, decimal? Median, bool Live = true,
+    string? AiNote = null);
 
 /// <summary>
 /// Silnik w trybie firehose: zamiast zapytania per gra pobiera jeden strumień
@@ -23,7 +24,8 @@ public sealed class TrackerEngine(
     VintedClient client,
     SqliteStore store,
     WatchlistStore watchlist,
-    Notifier notifier)
+    Notifier notifier,
+    VisionVerifier vision)
 {
     public DateTimeOffset? LastCycleFinished { get; private set; }
     public bool CycleInProgress { get; private set; }
@@ -136,16 +138,39 @@ public sealed class TrackerEngine(
                     continue;
                 }
 
-                var cheapest = listings.FirstOrDefault(l =>
+                var candidates = listings.Where(l =>
                     l.Price >= floor
                     && DealEvaluator.IsRelevant(l.Title, blocklist)
                     && matcher.Match(l.Title, TitleNormalizer.DetectPlatform(l.Title))?.Key == gameKey);
+
+                Listing? cheapest = null;
+                string? aiNote = null;
+                if (vision.Enabled)
+                {
+                    // AI ogląda zdjęcia maks. 3 najtańszych kandydatów i bierze
+                    // pierwszego, który naprawdę jest tą grą.
+                    foreach (var candidate in candidates.Take(3))
+                    {
+                        var ai = await vision.VerifyAsync(game.Title, candidate.Title, candidate.PhotoUrl, ct);
+                        if (ai is { IsMatch: false })
+                            continue;
+                        cheapest = candidate;
+                        aiNote = ai is null ? null : $"AI: {(ai.IsMatch ? "✅" : "")} {ai.Note}".Trim();
+                        break;
+                    }
+                }
+                else
+                {
+                    cheapest = candidates.FirstOrDefault();
+                }
+
                 if (cheapest is not null)
                     Cheapest[game.Query] = new CheapestNow(
                         cheapest.Title, cheapest.Price, cheapest.Currency, cheapest.Url,
                         DateTimeOffset.UtcNow,
                         Bargain: median is { } m && cheapest.Price <= m * DealEvaluator.DealRatio,
-                        Median: median);
+                        Median: median,
+                        AiNote: aiNote);
                 else
                     misses.Add(game.Title);
 
@@ -366,6 +391,27 @@ public sealed class TrackerEngine(
             : new DealVerdict(DealTier.None, 0, []);
         if (firstRun && verdict.Tier != DealTier.Suspicious)
             verdict = verdict with { Tier = DealTier.None }; // backfill nie alertuje
+
+        // Kandydat na push przechodzi weryfikację po zdjęciu (jeśli włączona):
+        // AI ogląda fotkę i odsiewa samo pudełko / złą platformę / merch.
+        var wouldPush = !firstRun && verdict.Tier == DealTier.Strong
+            && verdict.ReferencePrice is { } rp && rp - listing.Price >= config.Defaults.MinMargin;
+        if (wouldPush && vision.Enabled)
+        {
+            var ai = await vision.VerifyAsync(gameTitle ?? "?", listing.Title, listing.PhotoUrl, ct);
+            if (ai is { IsMatch: false })
+                verdict = verdict with
+                {
+                    Tier = DealTier.Suspicious,
+                    Reasons = [.. verdict.Reasons, $"AI po zdjęciu: {ai.Note}"],
+                };
+            else if (ai is { IsMatch: true })
+                verdict = verdict with
+                {
+                    Reasons = [.. verdict.Reasons,
+                        $"AI po zdjęciu: ✅ {(ai.Complete ? "kompletna" : "sprawdź kompletność")} — {ai.Note}"],
+                };
+        }
 
         store.Insert(new ItemRecord(
             listing.Id, listing.Title, listing.Price, listing.Currency, listing.Url,

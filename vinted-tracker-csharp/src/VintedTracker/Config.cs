@@ -29,6 +29,11 @@ public sealed class Defaults
 
     /// <summary>Od ilu ofert grupa nierozpoznanych tytułów staje się grą "auto".</summary>
     [JsonPropertyName("autoPromoteMinSample")] public int AutoPromoteMinSample { get; init; } = 8;
+
+    /// <summary>Model Claude do weryfikacji ofert po zdjęciach (aktywna, gdy
+    /// ustawiono ANTHROPIC_API_KEY). "claude-haiku-4-5" tnie koszt ~5x
+    /// przy prostszej ocenie.</summary>
+    [JsonPropertyName("visionModel")] public string VisionModel { get; init; } = "claude-opus-5";
 }
 
 public sealed class Config

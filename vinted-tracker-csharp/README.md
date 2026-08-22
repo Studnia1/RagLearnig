@@ -79,6 +79,26 @@ cp start.example.sh start.sh   # raz: wpisz token i chat id Telegrama
 
 `start.sh` jest w `.gitignore`, więc token nie trafi do repozytorium.
 
+## Weryfikacja zdjęć AI (opcjonalna)
+
+Filtr tekstowy nie widzi tego, co widać na zdjęciu: samego pustego pudełka,
+złej platformy na okładce, merchu opisanego w języku, którego lista słów nie
+zna. Tracker może domykać tę lukę przez Claude API — AI ogląda zdjęcie
+**tylko w punkcie decyzji** (kandydat na push, kandydaci „najtańszej teraz"),
+czyli kilkadziesiąt zapytań dziennie, nie cały firehose:
+
+- kandydat na alert, którego zdjęcie nie pokazuje właściwej gry, trafia do
+  „podejrzanych" zamiast na telefon (powód „AI po zdjęciu: …" w feedzie);
+- „najtańsza teraz" wybiera pierwszego z 3 najtańszych kandydatów, którego
+  zdjęcie przejdzie weryfikację.
+
+Włączenie: załóż klucz na [console.anthropic.com](https://console.anthropic.com)
+i ustaw przed startem `export ANTHROPIC_API_KEY="sk-ant-…"` (np. w `start.sh`).
+Bez klucza tracker działa jak dotychczas. Model w `config.json` →
+`visionModel`: domyślnie `claude-opus-5` (~20–25 USD/mies. przy tym wolumenie);
+`claude-haiku-4-5` tnie koszt ~5x przy tym prostym zadaniu. Błędy API są
+fail-open — weryfikacja nigdy nie blokuje trackera.
+
 ## Alerty na Telegram (zalecane przy flippingu)
 
 1. Napisz do [@BotFather](https://t.me/BotFather) → `/newbot` → dostajesz

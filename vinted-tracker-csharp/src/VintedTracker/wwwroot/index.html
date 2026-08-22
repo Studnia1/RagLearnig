@@ -302,7 +302,7 @@ function renderGames(games) {
       <td class="num muted">${g.dealCount}</td>
       <td class="num">${g.cheapest
         ? `<a class="${g.cheapest.bargain ? 'bargain' : ''}" href="${esc(g.cheapest.url)}" target="_blank" rel="noopener"
-             title="${esc(g.cheapest.listingTitle)}${g.cheapest.median != null ? ` · mediana ${fmt.format(g.cheapest.median)}` : ''} · ${g.cheapest.live ? 'sprawdzone' : 'widziane'} ${ago(g.cheapest.checkedAt)}${g.cheapest.live ? '' : ' · z bazy — mogła się już sprzedać'}">${g.cheapest.bargain ? '🔥 ' : ''}${g.cheapest.live ? '' : '~'}${fmt.format(g.cheapest.price)}</a>`
+             title="${esc(g.cheapest.listingTitle)}${g.cheapest.median != null ? ` · mediana ${fmt.format(g.cheapest.median)}` : ''} · ${g.cheapest.live ? 'sprawdzone' : 'widziane'} ${ago(g.cheapest.checkedAt)}${g.cheapest.live ? '' : ' · z bazy — mogła się już sprzedać'}${g.cheapest.aiNote ? ' · ' + esc(g.cheapest.aiNote) : ''}">${g.cheapest.bargain ? '🔥 ' : ''}${g.cheapest.live ? '' : '~'}${fmt.format(g.cheapest.price)}</a>`
         : '<span class="muted">—</span>'}</td>
       <td class="num"><input class="price" type="number" min="0" step="0.01"
         value="${g.maxPrice ?? ''}" placeholder="—" data-q="${esc(g.query)}"></td>

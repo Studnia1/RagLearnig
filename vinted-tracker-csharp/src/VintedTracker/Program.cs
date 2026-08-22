@@ -55,7 +55,11 @@ public static class Program
         using var store = new SqliteStore(config.Defaults.StatePath);
         var watchlist = new WatchlistStore(config.Defaults.WatchlistPath);
         var notifier = new Notifier();
-        var engine = new TrackerEngine(config, client, store, watchlist, notifier);
+        var vision = new VisionVerifier(config.Defaults.VisionModel);
+        Log.Info(vision.Enabled
+            ? $"Weryfikacja zdjęć AI: włączona ({config.Defaults.VisionModel})"
+            : "Weryfikacja zdjęć AI: wyłączona (brak ANTHROPIC_API_KEY)");
+        var engine = new TrackerEngine(config, client, store, watchlist, notifier, vision);
         engine.LoadPersistedCheapest();
 
         if (once)
