@@ -68,6 +68,9 @@ public class MatchingTests
     [InlineData("Funda protectora Nintendo Switch Zelda")]
     [InlineData("Kirby plüss figura")]
     [InlineData("Zelda samolepky nálepky set")]
+    [InlineData("Super Mario Odyssey bez pudełka")]
+    [InlineData("Zelda BOTW sam kartridż")]
+    [InlineData("Mario Kart 8 cartridge only")]
     public void MerchAndWrongMediaAreFilteredOut(string title) =>
         Assert.False(DealEvaluator.IsRelevant(title));
 

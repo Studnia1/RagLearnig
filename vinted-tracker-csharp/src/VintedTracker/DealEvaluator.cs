@@ -108,6 +108,7 @@ public static class DealEvaluator
         "karton", "sam box", "box only", "empty box", " box ", "pudelko",
         "krabice", " doboz", "boite", "scatola", "bez gry",
         "kun disk", "disc only", "disk only", "sama plyt", "solo disco",
+        "bez pudelk", "sam kartrid", "cartridge only", "cart only", " loose",
         // karty i planszówki
         "karty", " karta ", " card", " carte", "karten", "kaart", "kartya",
         "carti", " kort ", "kortti", "tcg", "planszow", "board game",

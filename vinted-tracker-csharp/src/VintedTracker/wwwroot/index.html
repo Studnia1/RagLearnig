@@ -228,7 +228,7 @@ function renderDeals(deals) {
   }
   el.innerHTML = rows.map(d => `
     <div class="card">
-      ${d.photoUrl ? `<img src="${esc(d.photoUrl)}" alt="" loading="lazy">` : '<div class="noimg">🎮</div>'}
+      ${d.photoUrl ? `<img src="${esc(d.photoUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<div class="noimg">🎮</div>'}
       <div class="body">
         <div class="top">
           ${tierBadge[d.tier] ?? ''}
@@ -262,7 +262,7 @@ function offersHtml(q) {
   if (!data.offers.length) return '<div class="empty-offers">Brak wiarygodnych ofert z ostatnich 7 dni.</div>';
   return data.offers.map(o => `
     <a class="offer" href="${esc(o.url)}" target="_blank" rel="noopener" title="${esc(o.title)}">
-      ${o.photoUrl ? `<img src="${esc(o.photoUrl)}" alt="" loading="lazy">` : '<div class="noimg">🎮</div>'}
+      ${o.photoUrl ? `<img src="${esc(o.photoUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '<div class="noimg">🎮</div>'}
       <div>
         <div class="p ${o.bargain ? 'bargain' : ''}">${o.bargain ? '🔥 ' : ''}${fmt.format(o.price)} ${esc(o.currency)}</div>
         <div class="t">${esc(o.title)}</div>
@@ -466,6 +466,18 @@ document.getElementById('addForm').addEventListener('submit', async e => {
   e.target.reset();
   refresh();
 });
+
+// Podpisane URL-e zdjęć Vinted wygasają — zepsute zdjęcie zamieniamy na
+// placeholder zamiast pustego miejsca (capture, bo error nie bąbelkuje).
+document.addEventListener('error', e => {
+  const img = e.target;
+  if (img.tagName === 'IMG' && img.closest('.offer, .card')) {
+    const d = document.createElement('div');
+    d.className = 'noimg';
+    d.textContent = '🎮';
+    img.replaceWith(d);
+  }
+}, true);
 
 refresh();
 setInterval(refresh, 15000);
