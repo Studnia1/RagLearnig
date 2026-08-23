@@ -234,6 +234,13 @@ public static class DealEvaluator
     [
         "obudowa", "czesci", "naprawy", "naprawa", "uszkodz", "defekt",
         "broken", "parts", "zamiennik", "sprawdzenia", "spares",
+        // Akcesoria i gry wspominające konsolę ("pad DO konsoli Xbox 360",
+        // "etui NA konsolę", "karton PO konsoli", "gry NA konsolę") — to nie
+        // konsola na sprzedaż; ta nigdy nie pisze o sobie "do/na/po konsoli".
+        // Celowo NIE odrzucamy samych słów pad/kontroler/ładowarka, bo
+        // "Konsola 3DS + pad + ładowarka" to legalny, cenny zestaw.
+        " do konsol", " od konsol", " na konsol", " po konsol",
+        "kompatybil", "compatible", "pasuje",
     ];
 
     /// <summary>

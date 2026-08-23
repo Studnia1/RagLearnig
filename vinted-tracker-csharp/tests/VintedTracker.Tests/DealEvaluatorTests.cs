@@ -160,6 +160,14 @@ public class DealEvaluatorTests
         Assert.Null(DealEvaluator.ConsoleHuntVerdict("Konsola PS Vita", "psvita", 20m, Hunts));
         Assert.Null(DealEvaluator.ConsoleHuntVerdict("Obudowa konsola PS4", "ps4", 100m, Hunts));
         Assert.Null(DealEvaluator.ConsoleHuntVerdict("Konsola PS4 uszkodzona do naprawy", "ps4", 150m, Hunts));
+        // Akcesoria i gry "do/na/po konsoli" — to nie konsola na sprzedaż.
+        Assert.Null(DealEvaluator.ConsoleHuntVerdict(
+            "Oryginalny bezprzewodowy kontroler / pad do konsoli Microsoft Xbox 360", "xbox360", 55m, Hunts));
+        Assert.Null(DealEvaluator.ConsoleHuntVerdict("Etui na konsolę Nintendo 3DS", "3ds", 35m, Hunts));
+        Assert.Null(DealEvaluator.ConsoleHuntVerdict("Karton po konsoli PS4", "ps4", 110m, Hunts));
+        Assert.Null(DealEvaluator.ConsoleHuntVerdict("Gry na konsolę Xbox 360 zestaw", "xbox360", 40m, Hunts));
+        Assert.Null(DealEvaluator.ConsoleHuntVerdict(
+            "Ładowarka kompatybilna z konsolą PS Vita", "psvita", 50m, Hunts));
         // Nie łowiona platforma / brak platformy.
         Assert.Null(DealEvaluator.ConsoleHuntVerdict("Konsola Nintendo Switch", "switch", 300m, Hunts));
         Assert.Null(DealEvaluator.ConsoleHuntVerdict("Konsola retro", null, 50m, Hunts));
