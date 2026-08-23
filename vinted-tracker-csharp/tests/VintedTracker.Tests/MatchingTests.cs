@@ -35,6 +35,38 @@ public class MatchingTests
         Assert.Equal(expected, TitleNormalizer.DetectPlatform(title));
 
     [Fact]
+    public void GenericTitleGamesKeepPlatformTokens()
+    {
+        var matcher = new GameMatcher([
+            GamePattern.FromWatch(new GameWatch
+            {
+                Title = "Nintendo Switch Sports", Query = "nintendo switch sports",
+                Aliases = ["switch sports"],
+            }),
+        ]);
+        // Samo "sports" łapało każdy tytuł sportowy — teraz wymagamy platformy.
+        Assert.Null(matcher.Match("Nintendo Looney Tunes wacky world of sports", null));
+        Assert.Null(matcher.Match("Gra Mario sports mix", null));
+        Assert.NotNull(matcher.Match("Nintendo Switch Sports, komplet z opaską", "switch"));
+        Assert.NotNull(matcher.Match("Switch Sports stan idealny", "switch"));
+    }
+
+    [Fact]
+    public void UnknownDigitInTitleRejectsMatch()
+    {
+        var matcher = new GameMatcher([
+            GamePattern.FromWatch(new GameWatch { Title = "Ni no Kuni", Query = "ni no kuni" }),
+            GamePattern.FromWatch(new GameWatch { Title = "Mario Kart 8 Deluxe", Query = "mario kart 8 deluxe", Aliases = ["mario kart 8"] }),
+        ]);
+        // Sequel z cyfrą, której wzorzec nie zna → nie ta gra.
+        Assert.Null(matcher.Match("Ni No Kuni 2 Revenant Kingdom switch", "switch"));
+        Assert.NotNull(matcher.Match("Ni no Kuni Wrath of the White Witch", null));
+        // Cyfra znana wzorcowi przechodzi; bundel z obcą cyfrą odpada.
+        Assert.NotNull(matcher.Match("Mario Kart 8 Deluxe Nintendo Switch", "switch"));
+        Assert.Null(matcher.Match("FIFA 23 + Mario Kart 8 zestaw 2 gier", "switch"));
+    }
+
+    [Fact]
     public void WatchGamesDefaultToSwitchAndRejectOtherPlatforms()
     {
         var matcher = new GameMatcher([

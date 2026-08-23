@@ -84,7 +84,9 @@ public static class DealEvaluator
         "silicon",
         // figurki / pluszaki / maskotki (EN/DE/SE figur, EE figuur, FR/ES/IT peluche…)
         "figur", "figuur", "amiibo", "maskotka", "mascot", "pluszak", "plush",
-        "plusch", "pluss", "peluche", "knuffel",
+        "plusch", "pluss", "peluche", "knuffel", "nendoroid", "figma",
+        // zestawy akcesoriów i bundle
+        "akcesor", "accessor", "bundle", "huppari",
         // plakaty / naklejki / przypinki / breloczki
         "plakat", "poster", "poszter", "affiche", "juliste",
         "naklejk", "sticker", "aufkleber", "autocollant", "adesiv", "pegatina",

@@ -41,7 +41,7 @@ public sealed class TrackerEngine(
 
     /// <summary>Bump przy każdej zmianie wbudowanych filtrów/platform — wymusza
     /// jednorazowe porządki w bazie przy najbliższym cyklu.</summary>
-    private const string FilterVersion = "5";
+    private const string FilterVersion = "6";
 
     /// <summary>Wyniki "najtańsze teraz" przeżywają restart (meta w SQLite).</summary>
     public void LoadPersistedCheapest()
@@ -82,9 +82,15 @@ public sealed class TrackerEngine(
                 unmatch.Add(row.Id);
         }
         store.ApplySweep(irrelevant, unmatch);
+        // Zapamiętane "najtańsze teraz" liczyły się starymi filtrami — czyścimy
+        // i wymuszamy świeży skan, żeby kolumna nie rozjeżdżała się z panelami.
+        Cheapest.Clear();
+        store.SetMeta("cheapest", "{}");
+        store.SetMeta("cheapest_at", "");
         store.SetMeta("filter_version", FilterVersion);
         Log.Info($"Porządki po zmianie filtrów: {irrelevant.Count} ofert odfiltrowanych, " +
-                 $"{unmatch.Count} odpiętych od gier (przejrzano {rows.Count})");
+                 $"{unmatch.Count} odpiętych od gier (przejrzano {rows.Count}); " +
+                 "wyniki najtańszych wyzerowane do ponownego skanu");
     }
 
     /// <summary>

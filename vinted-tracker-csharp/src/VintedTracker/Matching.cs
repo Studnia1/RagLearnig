@@ -57,8 +57,10 @@ public static class TitleNormalizer
     };
 
     /// <summary>Tokeny tytułu po normalizacji: małe litery, bez diakrytyków,
-    /// bez interpunkcji, bez słów-szumu i bez znaczników platformy.</summary>
-    public static List<string> Tokenize(string title)
+    /// bez interpunkcji, bez słów-szumu i (domyślnie) bez znaczników platformy.
+    /// <paramref name="keepPlatform"/> zachowuje znaczniki — potrzebne, gdy
+    /// platforma jest częścią tożsamości gry ("Nintendo Switch Sports").</summary>
+    public static List<string> Tokenize(string title, bool keepPlatform = false)
     {
         var normalized = StripDiacritics(title.ToLowerInvariant());
         var sb = new StringBuilder(normalized.Length);
@@ -66,7 +68,7 @@ public static class TitleNormalizer
             sb.Append(char.IsLetterOrDigit(ch) ? ch : ' ');
         return sb.ToString()
             .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Where(t => !NoiseWords.Contains(t) && !IsPlatformToken(t))
+            .Where(t => !NoiseWords.Contains(t) && (keepPlatform || !IsPlatformToken(t)))
             .ToList();
     }
 
@@ -126,11 +128,25 @@ public sealed record GamePattern(
     string Key, string Title, string? Platform, decimal? MaxPrice,
     IReadOnlyList<IReadOnlyList<string>> TokenSets)
 {
+    /// <summary>Słowa zbyt generyczne, by same niosły tożsamość gry — wzorzec
+    /// złożony tylko z nich zachowuje znaczniki platformy ("switch sports"
+    /// zamiast gołego "sports", które łapało każdy tytuł sportowy).</summary>
+    private static readonly HashSet<string> GenericTokens =
+        ["sports", "sport", "party", "world", "game", "games", "land", "story", "deluxe"];
+
+    private static IReadOnlyList<string> PatternTokens(string phrase)
+    {
+        var tokens = TitleNormalizer.Tokenize(phrase);
+        if (tokens.Count == 0 || tokens.All(GenericTokens.Contains))
+            tokens = TitleNormalizer.Tokenize(phrase, keepPlatform: true);
+        return tokens;
+    }
+
     public static GamePattern FromWatch(GameWatch watch)
     {
-        var sets = new List<IReadOnlyList<string>> { TitleNormalizer.Tokenize(watch.Query) };
+        var sets = new List<IReadOnlyList<string>> { PatternTokens(watch.Query) };
         foreach (var alias in watch.Aliases ?? [])
-            sets.Add(TitleNormalizer.Tokenize(alias));
+            sets.Add(PatternTokens(alias));
         return new GamePattern(
             Key: "watch:" + watch.Query.ToLowerInvariant(),
             Title: watch.Title,
@@ -157,7 +173,13 @@ public sealed class GameMatcher(IReadOnlyList<GamePattern> patterns)
     /// </summary>
     public GamePattern? Match(string title, string? itemPlatform)
     {
-        var tokens = TitleNormalizer.Tokenize(title).ToHashSet();
+        // keepPlatform: nadzbiór zwykłych tokenów — wzorce bez znaczników
+        // platformy działają jak dotąd, a wzorce z nimi (np. "switch sports")
+        // mogą ich wymagać.
+        var tokens = TitleNormalizer.Tokenize(title, keepPlatform: true).ToHashSet();
+        // Cyfra w tytule, której wzorzec nie zna, to zwykle sequel albo bundel
+        // ("Ni No Kuni 2", "FIFA 23 + Mario Kart 8") — nie ta gra.
+        var digits = tokens.Where(t => t.All(char.IsDigit)).ToHashSet();
         GamePattern? best = null;
         var bestLen = 0;
         var tie = false;
@@ -170,6 +192,8 @@ public sealed class GameMatcher(IReadOnlyList<GamePattern> patterns)
             foreach (var set in p.TokenSets)
             {
                 if (set.Count == 0 || !set.All(tokens.Contains))
+                    continue;
+                if (digits.Except(set).Any())
                     continue;
                 if (set.Count > bestLen)
                 {
