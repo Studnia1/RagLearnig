@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace VintedTracker;
 
@@ -56,13 +57,23 @@ public static class TitleNormalizer
         ["pc"] = "pc",
     };
 
+    /// <summary>"switch 2"/"switch-2" → jeden token "switch2". Switch 2 to
+    /// osobny rynek cen, a bez sklejenia goła cyfra "2" wpadała na strażnika
+    /// cyfr w dopasowaniu i oferty Switch 2 były odrzucane jako sequele.
+    /// Lookahead pilnuje, żeby "switch 2023" czy "switch 20 gier" zostały
+    /// przy Switchu 1. "switch2" NIE jest znacznikiem platformy do zrzucenia —
+    /// niesie tożsamość ("Zelda BOTW Switch 2 Edition" ≠ wydanie na Switcha).</summary>
+    private static readonly Regex Switch2Rx = new(@"switch[\s\-–]*2(?!\d)", RegexOptions.Compiled);
+
+    private static string FoldSwitch2(string normalized) => Switch2Rx.Replace(normalized, "switch2");
+
     /// <summary>Tokeny tytułu po normalizacji: małe litery, bez diakrytyków,
     /// bez interpunkcji, bez słów-szumu i (domyślnie) bez znaczników platformy.
     /// <paramref name="keepPlatform"/> zachowuje znaczniki — potrzebne, gdy
     /// platforma jest częścią tożsamości gry ("Nintendo Switch Sports").</summary>
     public static List<string> Tokenize(string title, bool keepPlatform = false)
     {
-        var normalized = StripDiacritics(title.ToLowerInvariant());
+        var normalized = FoldSwitch2(StripDiacritics(title.ToLowerInvariant()));
         var sb = new StringBuilder(normalized.Length);
         foreach (var ch in normalized)
             sb.Append(char.IsLetterOrDigit(ch) ? ch : ' ');
@@ -80,7 +91,7 @@ public static class TitleNormalizer
     /// <summary>Wykrywa platformę z tytułu; null gdy nie wskazano.</summary>
     public static string? DetectPlatform(string title)
     {
-        var normalized = StripDiacritics(title.ToLowerInvariant());
+        var normalized = FoldSwitch2(StripDiacritics(title.ToLowerInvariant()));
         var flat = new StringBuilder(normalized.Length);
         var tokenBuf = new StringBuilder(normalized.Length + 1);
         foreach (var ch in normalized)
@@ -95,13 +106,20 @@ public static class TitleNormalizer
                 tokenBuf.Append(' ');
             }
         }
+        var tokens = tokenBuf.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        // Switch 2 przed znacznikami sklejonymi: sklejony tytuł zawiera też
+        // "nintendoswitch", które ukradłoby trafienie dla Switcha 1. Tylko po
+        // całym tokenie — sklejenie "switch 2023" dałoby fałszywe "switch2".
+        if (tokens.Any(t => t is "switch2" or "nintendoswitch2"))
+            return "switch2";
 
         var s = flat.ToString();
         foreach (var (marker, platform) in JoinedMarkers)
             if (s.Contains(marker))
                 return platform;
 
-        foreach (var token in tokenBuf.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var token in tokens)
             if (TokenMarkers.TryGetValue(token, out var platform))
                 return platform;
         return null;

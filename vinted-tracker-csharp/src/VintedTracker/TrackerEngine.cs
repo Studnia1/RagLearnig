@@ -41,7 +41,7 @@ public sealed class TrackerEngine(
 
     /// <summary>Bump przy każdej zmianie wbudowanych filtrów/platform — wymusza
     /// jednorazowe porządki w bazie przy najbliższym cyklu.</summary>
-    private const string FilterVersion = "8";
+    private const string FilterVersion = "9";
 
     /// <summary>Wyniki "najtańsze teraz" przeżywają restart (meta w SQLite).</summary>
     public void LoadPersistedCheapest()
@@ -66,33 +66,61 @@ public sealed class TrackerEngine(
                || DateTimeOffset.UtcNow - last > TimeSpan.FromHours(24);
     }
 
-    private void RunSweepIfNeeded(GameMatcher matcher)
+    private void RunSweepIfNeeded(
+        GameMatcher matcher,
+        Dictionary<(string, string), (string Key, string Title)> autoIndex)
     {
         if (store.GetMeta("filter_version") == FilterVersion)
             return;
+        // Pełna reindeksacja: poza odfiltrowaniem gruzu i odpięciem błędnych
+        // dopasowań umie też PODPIĄĆ oferty, których stare reguły nie widziały
+        // (np. wydania Switch 2 odrzucane przez strażnika cyfr).
         var rows = store.SnapshotForSweep();
-        var irrelevant = new List<long>();
-        var unmatch = new List<long>();
+        var changes = new List<SqliteStore.ReindexRow>();
+        int attached = 0, detached = 0, filtered = 0;
         foreach (var row in rows)
         {
+            var normKey = TitleNormalizer.NormKey(row.Title);
             var platform = TitleNormalizer.DetectPlatform(row.Title);
-            if (row.Relevant && (!DealEvaluator.IsRelevant(row.Title, _blocklist)
-                || (platform is not null && config.Defaults.ExcludedPlatforms.Contains(platform))))
-                irrelevant.Add(row.Id);
-            else if (row.GameKey is { } key && key.StartsWith("watch:")
-                && matcher.Match(row.Title, platform)?.Key != key)
-                unmatch.Add(row.Id);
+            var relevant = DealEvaluator.IsRelevant(row.Title, _blocklist)
+                && (platform is null || !config.Defaults.ExcludedPlatforms.Contains(platform));
+            string? gameKey = null;
+            string? gameTitle = null;
+            if (relevant && normKey.Length > 0)
+            {
+                if (matcher.Match(row.Title, platform) is { } watch)
+                {
+                    gameKey = watch.Key;
+                    gameTitle = watch.Title;
+                }
+                else if (autoIndex.TryGetValue((normKey, platform ?? ""), out var auto))
+                {
+                    gameKey = auto.Key;
+                    gameTitle = auto.Title;
+                }
+            }
+            if (normKey == row.NormKey && platform == row.Platform
+                && relevant == row.Relevant && gameKey == row.GameKey)
+                continue;
+            if (row.Relevant && !relevant)
+                filtered++;
+            if (gameKey != row.GameKey)
+                _ = gameKey is null ? detached++ : attached++;
+            changes.Add(new SqliteStore.ReindexRow(
+                row.Id, normKey, platform, gameKey,
+                gameKey is null ? null : gameTitle, relevant,
+                ResetTier: gameKey != row.GameKey || (row.Relevant && !relevant)));
         }
-        store.ApplySweep(irrelevant, unmatch);
+        store.ApplyReindex(changes);
         // Zapamiętane "najtańsze teraz" liczyły się starymi filtrami — czyścimy
         // i wymuszamy świeży skan, żeby kolumna nie rozjeżdżała się z panelami.
         Cheapest.Clear();
         store.SetMeta("cheapest", "{}");
         store.SetMeta("cheapest_at", "");
         store.SetMeta("filter_version", FilterVersion);
-        Log.Info($"Porządki po zmianie filtrów: {irrelevant.Count} ofert odfiltrowanych, " +
-                 $"{unmatch.Count} odpiętych od gier (przejrzano {rows.Count}); " +
-                 "wyniki najtańszych wyzerowane do ponownego skanu");
+        Log.Info($"Porządki po zmianie filtrów: {changes.Count} ofert zaktualizowanych " +
+                 $"({attached} podpiętych do gier, {detached} odpiętych, {filtered} odfiltrowanych; " +
+                 $"przejrzano {rows.Count}); wyniki najtańszych wyzerowane do ponownego skanu");
     }
 
     /// <summary>
@@ -157,9 +185,11 @@ public sealed class TrackerEngine(
                 {
                     // AI ogląda zdjęcia maks. 3 najtańszych kandydatów i bierze
                     // pierwszego, który naprawdę jest tą grą.
+                    var watchPlatform = GamePattern.FromWatch(game).Platform;
                     foreach (var candidate in candidates.Take(3))
                     {
-                        var ai = await vision.VerifyAsync(game.Title, candidate.Title, candidate.PhotoUrl, ct);
+                        var ai = await vision.VerifyAsync(
+                            game.Title, candidate.Title, candidate.PhotoUrl, ct, watchPlatform);
                         if (ai is { IsMatch: false }
                             || (config.Defaults.VisionRequireComplete && ai is { Complete: false }))
                         {
@@ -221,7 +251,7 @@ public sealed class TrackerEngine(
             var matcher = new GameMatcher(watchlist.Snapshot().Select(GamePattern.FromWatch).ToList());
             var autoIndex = store.AutoGameIndex();
             _blocklist = store.GetBlocklist();
-            RunSweepIfNeeded(matcher);
+            RunSweepIfNeeded(matcher, autoIndex);
             _cJunk = _cWatch = _cAuto = _cDeal = _cStrong = _cSusp = 0;
 
             var pages = 0;
@@ -275,7 +305,7 @@ public sealed class TrackerEngine(
             }
 
             if (!LastCycleBlocked)
-                await SeedWatchlistAsync(matcher, autoIndex, ct);
+                await RunWatchQueueAsync(matcher, autoIndex, ct);
 
             var promoted = store.PromoteAutoGames(config.Defaults.AutoPromoteMinSample);
             if (promoted > 0)
@@ -303,35 +333,41 @@ public sealed class TrackerEngine(
     }
 
     /// <summary>
-    /// Jednorazowe zasianie puli cen dla gier z watchlisty: firehose niesie
-    /// najnowsze oferty z całej kategorii, więc konkretny tytuł zbiera próbkę
-    /// powoli. Celowane wyszukiwanie (raz na grę, wynik zapamiętany w meta)
-    /// odblokowuje mediany od pierwszego dnia. Zasiane oferty nie alertują —
-    /// to baza cen, nie nowości.
+    /// Kolejka celowanych wyszukiwań: każda śledzona gra dostaje cyklicznie
+    /// własne zapytanie do wyszukiwarki, w kolejności od najdawniej sprawdzonej.
+    /// Firehose ma limit stronicowania (~1000 ofert wstecz), więc przy dużym
+    /// ruchu część ofert nigdy przez niego nie przepływa — kolejka gwarantuje,
+    /// że żadna gra nie zostaje w tyle. Pierwszy skan gry tylko zasiewa bazę
+    /// cen (bez alertów); kolejne obiegi alertują normalnie, bo nowe oferty
+    /// w nich to świeże okazje, które firehose przegapił.
     /// </summary>
-    /// <summary>Ile gier maksymalnie zasiać w jednym cyklu — duża watchlista
-    /// rozkłada się na kolejne cykle zamiast strzelać setką zapytań naraz.</summary>
-    private const int SeedBatchPerCycle = 10;
+    /// <summary>Ile gier z kolejki sprawdzić w jednym cyklu — mało, żeby nie
+    /// prowokować anty-bota; pełny obieg i tak domyka się w kilka godzin.</summary>
+    private const int QueueBatchPerCycle = 4;
 
-    private async Task SeedWatchlistAsync(
+    private async Task RunWatchQueueAsync(
         GameMatcher matcher,
         Dictionary<(string, string), (string Key, string Title)> autoIndex,
         CancellationToken ct)
     {
-        var seededThisCycle = 0;
-        foreach (var game in watchlist.Snapshot())
+        var games = watchlist.Snapshot();
+        if (games.Count == 0)
+            return;
+        var due = games
+            .Select(g =>
+            {
+                var metaKey = "watchscan:" + g.Query.ToLowerInvariant();
+                var last = long.TryParse(store.GetMeta(metaKey), out var ts) ? ts : 0L;
+                return (Game: g, MetaKey: metaKey, Last: last);
+            })
+            .OrderBy(x => x.Last)
+            .Take(QueueBatchPerCycle)
+            .ToList();
+
+        var scanned = new List<string>();
+        foreach (var (game, metaKey, last) in due)
         {
             ct.ThrowIfCancellationRequested();
-            if (seededThisCycle >= SeedBatchPerCycle)
-            {
-                Log.Info("Limit zasiewania na cykl — reszta gier w kolejnych cyklach");
-                return;
-            }
-            var metaKey = "seeded:watch:" + game.Query.ToLowerInvariant();
-            if (store.GetMeta(metaKey) == "1")
-                continue;
-            seededThisCycle++;
-
             IReadOnlyList<Listing> listings;
             try
             {
@@ -341,13 +377,13 @@ public sealed class TrackerEngine(
             {
                 LastCycleBlocked = true;
                 LastError = e.Message;
-                Log.Warn($"Zasiewanie przerwane: {e.Message}");
-                return;
+                Log.Warn($"Kolejka wyszukiwań przerwana: {e.Message}");
+                break;
             }
             catch (Exception e) when (e is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
             {
-                Log.Warn($"Zasiewanie \"{game.Query}\" nieudane: {e.Message}");
-                continue;
+                Log.Warn($"Kolejka: \"{game.Query}\" nieudane: {e.Message}");
+                continue; // bez stempla — gra zostaje na czele kolejki
             }
 
             var added = 0;
@@ -356,12 +392,21 @@ public sealed class TrackerEngine(
                 if (store.IsKnown(listing.Id))
                     continue;
                 added++;
-                // firstRun: true — zasiane oferty budują tylko bazę cen.
-                await ProcessListingAsync(listing, matcher, autoIndex, firstRun: true, ct);
+                // Pierwszy skan (last == 0) zasiewa bez alertów — to stare
+                // oferty budujące medianę, nie nowości.
+                await ProcessListingAsync(listing, matcher, autoIndex, firstRun: last == 0, ct);
             }
-            store.SetMeta(metaKey, "1");
-            Log.Info($"Zasiano \"{game.Query}\": {added} ofert do bazy cen");
+            store.SetMeta(metaKey, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString());
+            scanned.Add($"{game.Query} (+{added})");
             await Task.Delay(TimeSpan.FromSeconds(1.5 + Random.Shared.NextDouble() * 1.5), ct);
+        }
+
+        if (scanned.Count > 0)
+        {
+            var rotationHours = games.Count * config.Defaults.PollIntervalSeconds
+                / (double)QueueBatchPerCycle / 3600.0;
+            Log.Info($"Kolejka wyszukiwań: {string.Join(", ", scanned)} — " +
+                     $"pełny obieg {games.Count} gier co ~{rotationHours:0.0} h");
         }
     }
 

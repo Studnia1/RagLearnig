@@ -34,6 +34,7 @@ public sealed class VisionVerifier
     private static string PlatformName(string? platform) => platform switch
     {
         null or "switch" => "Nintendo Switch",
+        "switch2" => "Nintendo Switch 2",
         "3ds" => "Nintendo 3DS",
         "ds" => "Nintendo DS",
         "psvita" => "PlayStation Vita",

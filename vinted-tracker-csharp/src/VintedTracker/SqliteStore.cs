@@ -335,7 +335,9 @@ public sealed class SqliteStore : IDisposable
     public long ItemCount() => ScalarLong("SELECT COUNT(*) FROM items");
     public long AutoGameCount() => ScalarLong("SELECT COUNT(*) FROM auto_games");
 
-    public sealed record SweepRow(long Id, string Title, bool Relevant, string? GameKey);
+    public sealed record SweepRow(
+        long Id, string Title, bool Relevant, string? GameKey,
+        string NormKey, string? Platform, string? GameTitle);
 
     /// <summary>Wiersze do ponownej oceny po zmianie wbudowanych filtrów.</summary>
     public IReadOnlyList<SweepRow> SnapshotForSweep()
@@ -343,43 +345,64 @@ public sealed class SqliteStore : IDisposable
         lock (_lock)
         {
             using var cmd = _conn.CreateCommand();
-            cmd.CommandText = "SELECT id, title, relevant, game_key FROM items WHERE relevant = 1 OR game_key IS NOT NULL";
+            cmd.CommandText = "SELECT id, title, relevant, game_key, norm_key, platform, game_title " +
+                              "FROM items WHERE relevant = 1 OR game_key IS NOT NULL";
             var rows = new List<SweepRow>();
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
                 rows.Add(new SweepRow(
                     reader.GetInt64(0), reader.GetString(1), reader.GetInt32(2) == 1,
-                    reader.IsDBNull(3) ? null : reader.GetString(3)));
+                    reader.IsDBNull(3) ? null : reader.GetString(3),
+                    reader.IsDBNull(4) ? "" : reader.GetString(4),
+                    reader.IsDBNull(5) ? null : reader.GetString(5),
+                    reader.IsDBNull(6) ? null : reader.GetString(6)));
             return rows;
         }
     }
 
-    /// <summary>Stosuje wynik porządków: gruz traci status i wypada z median,
-    /// błędnie dopasowane oferty zostają odpięte od gier.</summary>
-    public void ApplySweep(IReadOnlyList<long> irrelevantIds, IReadOnlyList<long> unmatchIds)
+    /// <summary>Pełny wynik reindeksacji jednego wiersza (porządki po zmianie
+    /// filtrów/platform): nowy klucz normalizacji, platforma i przypięcie do
+    /// gry. <paramref name="ResetTier"/> zeruje tier, gdy oferta wypada z gry
+    /// lub z median — sama zmiana normalizacji nie kasuje historii okazji.</summary>
+    public sealed record ReindexRow(
+        long Id, string NormKey, string? Platform, string? GameKey, string? GameTitle,
+        bool Relevant, bool ResetTier);
+
+    /// <summary>Stosuje reindeksację wsteczną — w odróżnieniu od zwykłego
+    /// odpinania umie też PODPIĄĆ ofertę do gry (np. wydania Switch 2, które
+    /// stary strażnik cyfr odrzucał).</summary>
+    public void ApplyReindex(IReadOnlyList<ReindexRow> rows)
     {
         lock (_lock)
         {
             using var tx = _conn.BeginTransaction();
-            foreach (var chunk in irrelevantIds.Chunk(500))
+            using var cmd = _conn.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText =
+                "UPDATE items SET norm_key = @n, platform = @p, game_key = @k, game_title = @t, " +
+                "relevant = @r, tier = CASE WHEN @z = 1 THEN 'None' ELSE tier END WHERE id = @i";
+            var pn = cmd.CreateParameter(); pn.ParameterName = "@n"; cmd.Parameters.Add(pn);
+            var pp = cmd.CreateParameter(); pp.ParameterName = "@p"; cmd.Parameters.Add(pp);
+            var pk = cmd.CreateParameter(); pk.ParameterName = "@k"; cmd.Parameters.Add(pk);
+            var pt = cmd.CreateParameter(); pt.ParameterName = "@t"; cmd.Parameters.Add(pt);
+            var pr = cmd.CreateParameter(); pr.ParameterName = "@r"; cmd.Parameters.Add(pr);
+            var pz = cmd.CreateParameter(); pz.ParameterName = "@z"; cmd.Parameters.Add(pz);
+            var pi = cmd.CreateParameter(); pi.ParameterName = "@i"; cmd.Parameters.Add(pi);
+            foreach (var row in rows)
             {
-                using var cmd = _conn.CreateCommand();
-                cmd.Transaction = tx;
-                cmd.CommandText =
-                    $"UPDATE items SET relevant = 0, tier = 'None' WHERE id IN ({string.Join(',', chunk)})";
-                cmd.ExecuteNonQuery();
-            }
-            foreach (var chunk in unmatchIds.Chunk(500))
-            {
-                using var cmd = _conn.CreateCommand();
-                cmd.Transaction = tx;
-                cmd.CommandText =
-                    $"UPDATE items SET game_key = NULL, game_title = NULL, tier = 'None' WHERE id IN ({string.Join(',', chunk)})";
+                pn.Value = row.NormKey;
+                pp.Value = (object?)row.Platform ?? DBNull.Value;
+                pk.Value = (object?)row.GameKey ?? DBNull.Value;
+                pt.Value = (object?)row.GameTitle ?? DBNull.Value;
+                pr.Value = row.Relevant ? 1 : 0;
+                pz.Value = row.ResetTier ? 1 : 0;
+                pi.Value = row.Id;
                 cmd.ExecuteNonQuery();
             }
             tx.Commit();
         }
     }
+
 
     /// <summary>Gruz-lista użytkownika: słowa kluczowe oznaczające akcesoria/śmieci.</summary>
     public IReadOnlyList<string> GetBlocklist()

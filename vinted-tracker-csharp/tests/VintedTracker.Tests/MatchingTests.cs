@@ -34,6 +34,50 @@ public class MatchingTests
     public void HandheldPlatformsAreDetected(string title, string expected) =>
         Assert.Equal(expected, TitleNormalizer.DetectPlatform(title));
 
+    [Theory]
+    [InlineData("Mario Kart World Nintendo Switch 2", "switch2")]
+    [InlineData("Donkey Kong Bananza switch2 nowa folia", "switch2")]
+    [InlineData("Zelda BOTW Switch 2 Edition", "switch2")]
+    // Lookahead: cyfra po "2" to rok/liczba gier, nie Switch 2.
+    [InlineData("Nintendo Switch 2023 gra Mario", "switch")]
+    [InlineData("Nintendo Switch 20 gier zestaw", "switch")]
+    public void Switch2IsItsOwnPlatform(string title, string expected) =>
+        Assert.Equal(expected, TitleNormalizer.DetectPlatform(title));
+
+    [Fact]
+    public void Switch2ListingsMatchSwitch2WatchesOnly()
+    {
+        var matcher = new GameMatcher([
+            GamePattern.FromWatch(new GameWatch
+            {
+                Title = "Mario Kart World", Query = "mario kart world", Platform = "switch2",
+            }),
+            GamePattern.FromWatch(new GameWatch
+            {
+                Title = "Zelda: Breath of the Wild", Query = "zelda breath of the wild",
+                Aliases = ["botw"],
+            }),
+            GamePattern.FromWatch(new GameWatch
+            {
+                Title = "Zelda: BOTW – Switch 2 Edition",
+                Query = "zelda breath of the wild switch 2", Aliases = ["botw switch 2"],
+            }),
+        ]);
+        // "Switch 2" w tytule nie wpada już na strażnika cyfr jako sequel.
+        var t = "Mario Kart World Nintendo Switch 2 NOWA";
+        Assert.Equal("Mario Kart World",
+            matcher.Match(t, TitleNormalizer.DetectPlatform(t))?.Title);
+        // Wydanie Switch 2 nie podpina się pod grę śledzoną na Switcha 1…
+        var s2 = "The Legend of Zelda Breath of the Wild Switch 2 Edition";
+        Assert.Equal("Zelda: BOTW – Switch 2 Edition",
+            matcher.Match(s2, TitleNormalizer.DetectPlatform(s2))?.Title);
+        // …a goły tytuł bez platformy nadal trafia do wydania na Switcha 1
+        // (wzorzec S2 wymaga tokenu switch2, więc nie ma remisu).
+        Assert.Equal("Zelda: Breath of the Wild",
+            matcher.Match("Zelda Breath of the Wild", null)?.Title);
+        Assert.Null(matcher.Match("Mario Kart World Nintendo Switch 2", "switch"));
+    }
+
     [Fact]
     public void GenericTitleGamesKeepPlatformTokens()
     {

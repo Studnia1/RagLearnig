@@ -16,6 +16,21 @@ gier — to zwykle **1–2 zapytania co cykl**, niezależnie czy śledzisz 16 gi
 czy cały rynek. Duży jest tylko pierwszy przebieg (backfill, domyślnie
 20 stron ≈ 2000 ofert), który buduje bazę cen i nie alertuje.
 
+Firehose ma jednak limit stronicowania Vinted (~1000 ofert wstecz), więc
+przy dużym ruchu część ofert nigdy przez niego nie przepływa. Domyka to
+**kolejka celowanych wyszukiwań**: co cykl tracker odpytuje kilka śledzonych
+gier (od najdawniej sprawdzonej), więc każda gra ma gwarantowany własny skan
+co kilka godzin. Pierwszy skan gry tylko zasiewa bazę cen; kolejne obiegi
+alertują normalnie — nowa oferta znaleziona kolejką to okazja, którą
+firehose przegapił. Postęp widać w logach (`Kolejka wyszukiwań: …`).
+
+Nintendo **Switch 2 to osobna platforma** (`switch2`) z osobnymi cenami:
+"…Switch 2" w tytule skleja się w jeden znacznik, więc wydania Switch 2 nie
+wpadają na strażnika cyfr jako rzekome sequele, a "Switch 2023" czy
+"Switch 20 gier" zostają przy Switchu 1. Gry Switch 2 w `games.json`
+oznaczasz `"platform": "switch2"` (albo po prostu piszesz "switch 2"
+w zapytaniu — wykryje się samo).
+
 Każda nowa oferta przechodzi przez:
 
 1. **Filtr trafności** — etui, steelbooki, amiibo, "same kartony" odpadają
