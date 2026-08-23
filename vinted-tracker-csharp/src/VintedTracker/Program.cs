@@ -147,6 +147,8 @@ public static class Program
                     AutoGames = store.AutoGameCount(),
                     config.Defaults.MinMargin,
                     engine.CheapestScanInProgress,
+                    VisionEnabled = vision.Enabled,
+                    config.Defaults.VisionModel,
                     Blocklist = store.GetBlocklist(),
                 },
             });

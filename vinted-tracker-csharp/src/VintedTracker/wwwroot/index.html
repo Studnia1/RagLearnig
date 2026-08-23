@@ -352,7 +352,8 @@ async function refresh() {
         ? `⚠ ${st.lastError}`
         : `Ostatni cykl: ${ago(st.lastCycleFinished)} (+${st.lastCycleNewItems} ofert, ${st.lastCyclePages} str.) · ` +
           `w bazie: ${st.itemsTotal} ofert, ${st.autoGames} gier auto · co ${st.pollIntervalSeconds} s · ` +
-          `${st.baseUrl.replace('https://', '')}${st.catalogInfo ? ' · katalog: ' + st.catalogInfo : ''}`;
+          `${st.baseUrl.replace('https://', '')}${st.catalogInfo ? ' · katalog: ' + st.catalogInfo : ''}` +
+          ` · AI: ${st.visionEnabled ? '🟢 ' + st.visionModel : '🔴 wyłączona (brak klucza)'}`;
   } catch {
     document.getElementById('status').textContent = 'Brak połączenia z trackerem';
   }
