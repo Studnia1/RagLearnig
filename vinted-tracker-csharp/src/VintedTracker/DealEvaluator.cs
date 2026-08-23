@@ -227,6 +227,25 @@ public static class DealEvaluator
         return Math.Max(MinSanePrice, TrimmedMedian(sane) * SuspiciousRatio);
     }
 
+    /// <summary>
+    /// Polowanie per platforma: gra na łowionej platformie w cenie ≤ progu to
+    /// mocna okazja niezależnie od dopasowania do tytułu — na rynkach retro
+    /// (3DS, Vita, PS3…) liczy się "cokolwiek grywalnego bardzo tanio".
+    /// Score = procent zapasu do progu.
+    /// </summary>
+    public static DealVerdict? HuntVerdict(
+        string? platform, decimal price, IReadOnlyDictionary<string, decimal> hunts)
+    {
+        if (platform is null || !hunts.TryGetValue(platform, out var cap)
+            || price < MinSanePrice || price > cap)
+            return null;
+        return new DealVerdict(
+            DealTier.Strong,
+            Math.Round((double)((cap - price) / cap * 100), 1),
+            [$"polowanie {platform}: {price:0.00} ≤ próg {cap:0.00}"],
+            ReferencePrice: cap);
+    }
+
     /// <summary>Mediana z próbki przyciętej o 10% najtańszych i 10% najdroższych.</summary>
     public static decimal TrimmedMedian(IReadOnlyList<decimal> values)
     {

@@ -41,7 +41,7 @@ public sealed class TrackerEngine(
 
     /// <summary>Bump przy każdej zmianie wbudowanych filtrów/platform — wymusza
     /// jednorazowe porządki w bazie przy najbliższym cyklu.</summary>
-    private const string FilterVersion = "6";
+    private const string FilterVersion = "7";
 
     /// <summary>Wyniki "najtańsze teraz" przeżywają restart (meta w SQLite).</summary>
     public void LoadPersistedCheapest()
@@ -75,10 +75,12 @@ public sealed class TrackerEngine(
         var unmatch = new List<long>();
         foreach (var row in rows)
         {
-            if (row.Relevant && !DealEvaluator.IsRelevant(row.Title, _blocklist))
+            var platform = TitleNormalizer.DetectPlatform(row.Title);
+            if (row.Relevant && (!DealEvaluator.IsRelevant(row.Title, _blocklist)
+                || (platform is not null && config.Defaults.ExcludedPlatforms.Contains(platform))))
                 irrelevant.Add(row.Id);
             else if (row.GameKey is { } key && key.StartsWith("watch:")
-                && matcher.Match(row.Title, TitleNormalizer.DetectPlatform(row.Title))?.Key != key)
+                && matcher.Match(row.Title, platform)?.Key != key)
                 unmatch.Add(row.Id);
         }
         store.ApplySweep(irrelevant, unmatch);
@@ -366,9 +368,10 @@ public sealed class TrackerEngine(
         bool firstRun,
         CancellationToken ct)
     {
-        var relevant = DealEvaluator.IsRelevant(listing.Title, _blocklist);
         var normKey = TitleNormalizer.NormKey(listing.Title);
         var platform = TitleNormalizer.DetectPlatform(listing.Title);
+        var relevant = DealEvaluator.IsRelevant(listing.Title, _blocklist)
+            && (platform is null || !config.Defaults.ExcludedPlatforms.Contains(platform));
         if (!relevant)
             _cJunk++;
 
@@ -395,16 +398,32 @@ public sealed class TrackerEngine(
         var verdict = gameKey is not null
             ? DealEvaluator.Evaluate(listing, maxPrice, store.PricesFor(gameKey))
             : new DealVerdict(DealTier.None, 0, []);
+
+        // Polowanie per platforma: tania gra na 3DS/Vita/PS3/PS4 to okazja
+        // sama w sobie — bez dopasowania do konkretnego tytułu.
+        var huntHit = false;
+        if (relevant && verdict.Tier != DealTier.Strong
+            && DealEvaluator.HuntVerdict(platform, listing.Price, config.Defaults.PlatformHunts) is { } hunt)
+        {
+            verdict = hunt;
+            huntHit = true;
+            gameTitle ??= $"Polowanie: {platform}";
+        }
+
         if (firstRun && verdict.Tier != DealTier.Suspicious)
             verdict = verdict with { Tier = DealTier.None }; // backfill nie alertuje
 
         // Kandydat na push przechodzi weryfikację po zdjęciu (jeśli włączona):
         // AI ogląda fotkę i odsiewa samo pudełko / złą platformę / merch.
+        // Trafienie z polowania omija bramkę marży — próg ceny jest już bramką.
         var wouldPush = !firstRun && verdict.Tier == DealTier.Strong
-            && verdict.ReferencePrice is { } rp && rp - listing.Price >= config.Defaults.MinMargin;
+            && (huntHit || (verdict.ReferencePrice is { } rp
+                && rp - listing.Price >= config.Defaults.MinMargin));
         if (wouldPush && vision.Enabled)
         {
-            var ai = await vision.VerifyAsync(gameTitle ?? "?", listing.Title, listing.PhotoUrl, ct);
+            var ai = await vision.VerifyAsync(
+                huntHit ? "dowolna gra na tę platformę" : gameTitle ?? "?",
+                listing.Title, listing.PhotoUrl, ct, platform);
             if (ai is { IsMatch: false })
                 verdict = verdict with
                 {
@@ -433,7 +452,8 @@ public sealed class TrackerEngine(
 
         // Push tylko dla mocnych okazji z realną marżą — reszta ląduje w UI.
         var margin = verdict.ReferencePrice is { } r ? r - listing.Price : 0;
-        if (!firstRun && verdict.Tier == DealTier.Strong && margin >= config.Defaults.MinMargin)
+        // wouldPush trzyma warunki (marża lub polowanie); Tier mógł spaść po AI.
+        if (wouldPush && verdict.Tier == DealTier.Strong)
         {
             Log.Info($"PUSH: {gameTitle} — {listing.Price:0.00} {listing.Currency} (marża {margin:0.00})");
             await notifier.SendAsync(Notifier.FormatDeal(listing, gameTitle ?? "?", verdict), ct);

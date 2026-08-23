@@ -131,6 +131,30 @@ public class DealEvaluatorTests
         Assert.InRange(trimmed, 195, 210);
     }
 
+    private static readonly Dictionary<string, decimal> Hunts = new()
+    {
+        ["3ds"] = 25m, ["psvita"] = 30m, ["ps4"] = 25m,
+    };
+
+    [Fact]
+    public void HuntVerdictFiresForCheapHuntedPlatform()
+    {
+        var v = DealEvaluator.HuntVerdict("3ds", 18m, Hunts);
+        Assert.NotNull(v);
+        Assert.Equal(DealTier.Strong, v!.Tier);
+        Assert.Equal(25m, v.ReferencePrice);
+        Assert.Contains("polowanie", v.Reasons[0]);
+    }
+
+    [Fact]
+    public void HuntVerdictIgnoresOtherCases()
+    {
+        Assert.Null(DealEvaluator.HuntVerdict("switch", 18m, Hunts));   // nie łowiona
+        Assert.Null(DealEvaluator.HuntVerdict("ps4", 40m, Hunts));      // za drogo
+        Assert.Null(DealEvaluator.HuntVerdict("psvita", 2m, Hunts));    // poniżej sensowności
+        Assert.Null(DealEvaluator.HuntVerdict(null, 10m, Hunts));       // brak platformy
+    }
+
     [Fact]
     public void CredibleFloorIsThirtyPercentOfMedian()
     {

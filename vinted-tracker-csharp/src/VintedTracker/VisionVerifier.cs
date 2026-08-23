@@ -31,8 +31,21 @@ public sealed class VisionVerifier
 
     public bool Enabled => _client is not null;
 
+    private static string PlatformName(string? platform) => platform switch
+    {
+        null or "switch" => "Nintendo Switch",
+        "3ds" => "Nintendo 3DS",
+        "ds" => "Nintendo DS",
+        "psvita" => "PlayStation Vita",
+        "ps3" => "PlayStation 3",
+        "ps4" => "PlayStation 4",
+        "ps5" => "PlayStation 5",
+        _ => platform,
+    };
+
     public async Task<VisionVerdict?> VerifyAsync(
-        string gameTitle, string listingTitle, string? photoUrl, CancellationToken ct)
+        string gameTitle, string listingTitle, string? photoUrl,
+        CancellationToken ct, string? platform = null)
     {
         if (_client is null || string.IsNullOrEmpty(photoUrl))
             return null;
@@ -50,7 +63,7 @@ public sealed class VisionVerifier
                         Content = new List<ContentBlockParam>
                         {
                             new ImageBlockParam { Source = new UrlImageSource { Url = photoUrl } },
-                            new TextBlockParam { Text = BuildPrompt(gameTitle, listingTitle) },
+                            new TextBlockParam { Text = BuildPrompt(gameTitle, listingTitle, PlatformName(platform)) },
                         },
                     },
                 ],
@@ -70,10 +83,10 @@ public sealed class VisionVerifier
         }
     }
 
-    internal static string BuildPrompt(string gameTitle, string listingTitle) =>
+    internal static string BuildPrompt(string gameTitle, string listingTitle, string platform = "Nintendo Switch") =>
         $$"""
         Weryfikujesz ofertę z Vinted na podstawie zdjęcia.
-        Szukana gra: "{{gameTitle}}" — fizyczne wydanie na Nintendo Switch.
+        Szukana gra: "{{gameTitle}}" — fizyczne wydanie na {{platform}}.
         Tytuł ogłoszenia: "{{listingTitle}}"
 
         Oceń po zdjęciu:

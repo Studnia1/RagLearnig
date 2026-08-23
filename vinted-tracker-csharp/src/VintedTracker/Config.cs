@@ -34,6 +34,22 @@ public sealed class Defaults
     /// ustawiono ANTHROPIC_API_KEY). "claude-haiku-4-5" tnie koszt ~5x
     /// przy prostszej ocenie.</summary>
     [JsonPropertyName("visionModel")] public string VisionModel { get; init; } = "claude-opus-5";
+
+    /// <summary>Platformy wycinane całkowicie (jak gruz) — oferty nie wchodzą
+    /// do median, okazji ani gier auto.</summary>
+    [JsonPropertyName("excludedPlatforms")] public List<string> ExcludedPlatforms { get; init; } =
+        ["xbox-one", "xbox-series", "xbox360"];
+
+    /// <summary>Polowanie per platforma: każda gra na tej platformie w cenie
+    /// ≤ progu (waluta rynku) to mocna okazja z pushem — bez dopasowywania do
+    /// konkretnego tytułu. Klucze = platformy z wykrywania (3ds, psvita, ps3, ps4…).</summary>
+    [JsonPropertyName("platformHunts")] public Dictionary<string, decimal> PlatformHunts { get; init; } = new()
+    {
+        ["3ds"] = 25m,
+        ["psvita"] = 30m,
+        ["ps3"] = 15m,
+        ["ps4"] = 25m,
+    };
 }
 
 public sealed class Config

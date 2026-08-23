@@ -24,6 +24,13 @@
     "autoPromoteMinSample": 8,
     // Weryfikacja ofert po zdjęciach (Claude API) — włącza się, gdy ustawisz
     // zmienną ANTHROPIC_API_KEY. "claude-haiku-4-5" tnie koszt ~5x.
-    "visionModel": "claude-opus-5"
+    "visionModel": "claude-opus-5",
+    // Platformy wycinane całkowicie (nie wchodzą do median ani okazji).
+    "excludedPlatforms": ["xbox-one", "xbox-series", "xbox360"],
+    // Polowanie: każda gra na tej platformie w cenie <= progu to mocna
+    // okazja z pushem, bez dopasowywania do tytułu. Podnieś progi ostrożnie —
+    // tani szrot (sportówki na PS3/PS4) potrafi zalać alertami; niechciane
+    // tytuły dobijaj przyciskiem 🚫.
+    "platformHunts": { "3ds": 25, "psvita": 30, "ps3": 15, "ps4": 25 }
   }
 }
