@@ -27,10 +27,9 @@
     "visionModel": "claude-opus-5",
     // Platformy wycinane całkowicie (nie wchodzą do median ani okazji).
     "excludedPlatforms": ["xbox-one", "xbox-series", "xbox360"],
-    // Polowanie: każda gra na tej platformie w cenie <= progu to mocna
-    // okazja z pushem, bez dopasowywania do tytułu. Podnieś progi ostrożnie —
-    // tani szrot (sportówki na PS3/PS4) potrafi zalać alertami; niechciane
-    // tytuły dobijaj przyciskiem 🚫.
-    "platformHunts": { "3ds": 25, "psvita": 30, "ps3": 15, "ps4": 25 }
+    // Polowanie na tanie KONSOLE: oferta ze słowem "konsola/console" i tą
+    // platformą w cenie <= progu to mocna okazja z pushem. Części, wraki
+    // ("uszkodzona", "obudowa") i ceny poniżej 30% progu są odsiewane.
+    "platformHunts": { "3ds": 100, "psvita": 150, "ps3": 120, "ps4": 350, "xbox360": 100 }
   }
 }

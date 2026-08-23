@@ -133,26 +133,36 @@ public class DealEvaluatorTests
 
     private static readonly Dictionary<string, decimal> Hunts = new()
     {
-        ["3ds"] = 25m, ["psvita"] = 30m, ["ps4"] = 25m,
+        ["3ds"] = 100m, ["psvita"] = 150m, ["ps4"] = 350m, ["xbox360"] = 100m,
     };
 
     [Fact]
-    public void HuntVerdictFiresForCheapHuntedPlatform()
+    public void ConsoleHuntFiresForCheapConsole()
     {
-        var v = DealEvaluator.HuntVerdict("3ds", 18m, Hunts);
+        var v = DealEvaluator.ConsoleHuntVerdict(
+            "Konsola Nintendo 3DS niebieska, działa", "3ds", 80m, Hunts);
         Assert.NotNull(v);
         Assert.Equal(DealTier.Strong, v!.Tier);
-        Assert.Equal(25m, v.ReferencePrice);
-        Assert.Contains("polowanie", v.Reasons[0]);
+        Assert.Equal(100m, v.ReferencePrice);
+        Assert.Contains("konsol", v.Reasons[0]);
+        // Angielskie "console" i Xbox 360 też.
+        Assert.NotNull(DealEvaluator.ConsoleHuntVerdict(
+            "Xbox 360 console + pad", "xbox360", 90m, Hunts));
     }
 
     [Fact]
-    public void HuntVerdictIgnoresOtherCases()
+    public void ConsoleHuntIgnoresOtherCases()
     {
-        Assert.Null(DealEvaluator.HuntVerdict("switch", 18m, Hunts));   // nie łowiona
-        Assert.Null(DealEvaluator.HuntVerdict("ps4", 40m, Hunts));      // za drogo
-        Assert.Null(DealEvaluator.HuntVerdict("psvita", 2m, Hunts));    // poniżej sensowności
-        Assert.Null(DealEvaluator.HuntVerdict(null, 10m, Hunts));       // brak platformy
+        // Gra (bez słowa konsola) → to nie polowanie.
+        Assert.Null(DealEvaluator.ConsoleHuntVerdict("FIFA 21 PS4", "ps4", 20m, Hunts));
+        // Za drogo / podejrzanie tanio (wrak) / części / uszkodzona.
+        Assert.Null(DealEvaluator.ConsoleHuntVerdict("Konsola PS4 Pro", "ps4", 400m, Hunts));
+        Assert.Null(DealEvaluator.ConsoleHuntVerdict("Konsola PS Vita", "psvita", 20m, Hunts));
+        Assert.Null(DealEvaluator.ConsoleHuntVerdict("Obudowa konsola PS4", "ps4", 100m, Hunts));
+        Assert.Null(DealEvaluator.ConsoleHuntVerdict("Konsola PS4 uszkodzona do naprawy", "ps4", 150m, Hunts));
+        // Nie łowiona platforma / brak platformy.
+        Assert.Null(DealEvaluator.ConsoleHuntVerdict("Konsola Nintendo Switch", "switch", 300m, Hunts));
+        Assert.Null(DealEvaluator.ConsoleHuntVerdict("Konsola retro", null, 50m, Hunts));
     }
 
     [Fact]

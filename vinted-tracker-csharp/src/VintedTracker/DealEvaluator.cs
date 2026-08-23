@@ -227,22 +227,36 @@ public static class DealEvaluator
         return Math.Max(MinSanePrice, TrimmedMedian(sane) * SuspiciousRatio);
     }
 
+    private static readonly string[] ConsoleWords = ["konsol", "consol"];
+
+    /// <summary>Konsola opisana tymi słowami to części/wrak, nie okazja.</summary>
+    private static readonly string[] ConsolePartsWords =
+    [
+        "obudowa", "czesci", "naprawy", "naprawa", "uszkodz", "defekt",
+        "broken", "parts", "zamiennik", "sprawdzenia", "spares",
+    ];
+
     /// <summary>
-    /// Polowanie per platforma: gra na łowionej platformie w cenie ≤ progu to
-    /// mocna okazja niezależnie od dopasowania do tytułu — na rynkach retro
-    /// (3DS, Vita, PS3…) liczy się "cokolwiek grywalnego bardzo tanio".
-    /// Score = procent zapasu do progu.
+    /// Polowanie na tanie KONSOLE: oferta z "konsola/console" w tytule
+    /// i łowioną platformą w cenie ≤ progu to mocna okazja — niezależnie od
+    /// filtra gier (konsole są w nim celowo, żeby nie psuły median gier).
+    /// Dolny próg (30% progu) odsiewa wraki i scam; słowa części też.
     /// </summary>
-    public static DealVerdict? HuntVerdict(
-        string? platform, decimal price, IReadOnlyDictionary<string, decimal> hunts)
+    public static DealVerdict? ConsoleHuntVerdict(
+        string title, string? platform, decimal price, IReadOnlyDictionary<string, decimal> hunts)
     {
-        if (platform is null || !hunts.TryGetValue(platform, out var cap)
-            || price < MinSanePrice || price > cap)
+        if (platform is null || !hunts.TryGetValue(platform, out var cap))
+            return null;
+        var t = " " + TitleNormalizer.StripDiacritics(title.ToLowerInvariant()) + " ";
+        if (!ConsoleWords.Any(t.Contains) || ConsolePartsWords.Any(t.Contains))
+            return null;
+        var floor = Math.Max(MinSanePrice, cap * SuspiciousRatio);
+        if (price < floor || price > cap)
             return null;
         return new DealVerdict(
             DealTier.Strong,
             Math.Round((double)((cap - price) / cap * 100), 1),
-            [$"polowanie {platform}: {price:0.00} ≤ próg {cap:0.00}"],
+            [$"polowanie na konsolę {platform}: {price:0.00} ≤ próg {cap:0.00}"],
             ReferencePrice: cap);
     }
 

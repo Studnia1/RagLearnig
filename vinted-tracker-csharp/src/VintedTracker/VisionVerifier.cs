@@ -45,7 +45,7 @@ public sealed class VisionVerifier
 
     public async Task<VisionVerdict?> VerifyAsync(
         string gameTitle, string listingTitle, string? photoUrl,
-        CancellationToken ct, string? platform = null)
+        CancellationToken ct, string? platform = null, bool console = false)
     {
         if (_client is null || string.IsNullOrEmpty(photoUrl))
             return null;
@@ -63,7 +63,12 @@ public sealed class VisionVerifier
                         Content = new List<ContentBlockParam>
                         {
                             new ImageBlockParam { Source = new UrlImageSource { Url = photoUrl } },
-                            new TextBlockParam { Text = BuildPrompt(gameTitle, listingTitle, PlatformName(platform)) },
+                            new TextBlockParam
+                            {
+                                Text = console
+                                    ? BuildConsolePrompt(listingTitle, PlatformName(platform))
+                                    : BuildPrompt(gameTitle, listingTitle, PlatformName(platform)),
+                            },
                         },
                     },
                 ],
@@ -94,6 +99,22 @@ public sealed class VisionVerifier
           platformę (nie merch, nie samo puste pudełko, nie karty, nie inną grę,
           nie wydanie na inną konsolę, nie wersję z japońską okładką)?
         - complete: czy wygląda na kompletny zestaw (pudełko z grą)?
+        - note: krótkie uzasadnienie po polsku (maks. 12 słów).
+
+        Odpowiedz WYŁĄCZNIE JSON-em: {"is_match": bool, "complete": bool, "note": "..."}
+        """;
+
+    internal static string BuildConsolePrompt(string listingTitle, string platform) =>
+        $$"""
+        Weryfikujesz ofertę z Vinted na podstawie zdjęcia.
+        Szukana: KONSOLA {{platform}} w stanie do grania.
+        Tytuł ogłoszenia: "{{listingTitle}}"
+
+        Oceń po zdjęciu:
+        - is_match: czy zdjęcie pokazuje konsolę TEJ platformy (nie same akcesoria,
+          nie pada, nie pudełko po konsoli, nie części/obudowę, nie inną konsolę)?
+        - complete: czy zestaw wygląda kompletnie (konsola + widoczne okablowanie/pad,
+          brak widocznych uszkodzeń)?
         - note: krótkie uzasadnienie po polsku (maks. 12 słów).
 
         Odpowiedz WYŁĄCZNIE JSON-em: {"is_match": bool, "complete": bool, "note": "..."}

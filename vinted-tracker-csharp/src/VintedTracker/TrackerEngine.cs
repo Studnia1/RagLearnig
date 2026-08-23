@@ -399,15 +399,16 @@ public sealed class TrackerEngine(
             ? DealEvaluator.Evaluate(listing, maxPrice, store.PricesFor(gameKey))
             : new DealVerdict(DealTier.None, 0, []);
 
-        // Polowanie per platforma: tania gra na 3DS/Vita/PS3/PS4 to okazja
-        // sama w sobie — bez dopasowania do konkretnego tytułu.
+        // Polowanie na tanie konsole — niezależne od filtra gier (konsole są
+        // w nim celowo) i od wykluczeń platform gier (gry z Xboxa nie chcemy,
+        // konsolę Xbox 360 tanio — owszem).
         var huntHit = false;
-        if (relevant && verdict.Tier != DealTier.Strong
-            && DealEvaluator.HuntVerdict(platform, listing.Price, config.Defaults.PlatformHunts) is { } hunt)
+        if (DealEvaluator.ConsoleHuntVerdict(
+                listing.Title, platform, listing.Price, config.Defaults.PlatformHunts) is { } hunt)
         {
             verdict = hunt;
             huntHit = true;
-            gameTitle ??= $"Polowanie: {platform}";
+            gameTitle = $"Konsola {platform}";
         }
 
         if (firstRun && verdict.Tier != DealTier.Suspicious)
@@ -422,8 +423,8 @@ public sealed class TrackerEngine(
         if (wouldPush && vision.Enabled)
         {
             var ai = await vision.VerifyAsync(
-                huntHit ? "dowolna gra na tę platformę" : gameTitle ?? "?",
-                listing.Title, listing.PhotoUrl, ct, platform);
+                gameTitle ?? "?", listing.Title, listing.PhotoUrl, ct, platform,
+                console: huntHit);
             if (ai is { IsMatch: false })
                 verdict = verdict with
                 {

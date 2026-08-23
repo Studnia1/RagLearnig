@@ -40,15 +40,16 @@ public sealed class Defaults
     [JsonPropertyName("excludedPlatforms")] public List<string> ExcludedPlatforms { get; init; } =
         ["xbox-one", "xbox-series", "xbox360"];
 
-    /// <summary>Polowanie per platforma: każda gra na tej platformie w cenie
-    /// ≤ progu (waluta rynku) to mocna okazja z pushem — bez dopasowywania do
-    /// konkretnego tytułu. Klucze = platformy z wykrywania (3ds, psvita, ps3, ps4…).</summary>
+    /// <summary>Polowanie na tanie KONSOLE: oferta konsoli tej platformy w cenie
+    /// ≤ progu (waluta rynku) to mocna okazja z pushem. Klucze = platformy
+    /// z wykrywania (3ds, psvita, ps3, ps4…).</summary>
     [JsonPropertyName("platformHunts")] public Dictionary<string, decimal> PlatformHunts { get; init; } = new()
     {
-        ["3ds"] = 25m,
-        ["psvita"] = 30m,
-        ["ps3"] = 15m,
-        ["ps4"] = 25m,
+        ["3ds"] = 100m,
+        ["psvita"] = 150m,
+        ["ps3"] = 120m,
+        ["ps4"] = 350m,
+        ["xbox360"] = 100m,
     };
 }
 
