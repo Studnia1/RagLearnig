@@ -28,7 +28,10 @@
     // AI odrzuca też gry bez pudełka widoczne na zdjęciu (sam kartridż/płyta).
     "visionRequireComplete": true,
     // Platformy wycinane całkowicie (nie wchodzą do median ani okazji).
-    "excludedPlatforms": ["xbox-one", "xbox-series", "xbox360"],
+    // Domyślnie wszystko poza Switchem; polowania na konsole działają mimo to.
+    "excludedPlatforms": ["xbox-one", "xbox-series", "xbox360", "ps1", "ps2", "ps3",
+      "ps4", "ps5", "psp", "psvita", "wii", "wiiu", "ds", "3ds", "gb", "gba",
+      "n64", "gamecube", "snes", "ntsc", "pc"],
     // Polowanie na tanie KONSOLE: oferta ze słowem "konsola/console" i tą
     // platformą w cenie <= progu to mocna okazja z pushem. Części, wraki
     // ("uszkodzona", "obudowa") i ceny poniżej 30% progu są odsiewane.

@@ -41,7 +41,7 @@ public sealed class TrackerEngine(
 
     /// <summary>Bump przy każdej zmianie wbudowanych filtrów/platform — wymusza
     /// jednorazowe porządki w bazie przy najbliższym cyklu.</summary>
-    private const string FilterVersion = "7";
+    private const string FilterVersion = "8";
 
     /// <summary>Wyniki "najtańsze teraz" przeżywają restart (meta w SQLite).</summary>
     public void LoadPersistedCheapest()

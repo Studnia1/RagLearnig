@@ -40,9 +40,16 @@ public sealed class Defaults
     [JsonPropertyName("visionRequireComplete")] public bool VisionRequireComplete { get; init; } = true;
 
     /// <summary>Platformy wycinane całkowicie (jak gruz) — oferty nie wchodzą
-    /// do median, okazji ani gier auto.</summary>
+    /// do median, okazji ani gier auto. Domyślnie wszystko poza Switchem:
+    /// śledzimy rynek gier Switch; polowania na konsole (platformHunts)
+    /// działają NIEZALEŻNIE od tej listy.</summary>
     [JsonPropertyName("excludedPlatforms")] public List<string> ExcludedPlatforms { get; init; } =
-        ["xbox-one", "xbox-series", "xbox360"];
+    [
+        "xbox-one", "xbox-series", "xbox360",
+        "ps1", "ps2", "ps3", "ps4", "ps5", "psp", "psvita",
+        "wii", "wiiu", "ds", "3ds", "gb", "gba",
+        "n64", "gamecube", "snes", "ntsc", "pc",
+    ];
 
     /// <summary>Polowanie na tanie KONSOLE: oferta konsoli tej platformy w cenie
     /// ≤ progu (waluta rynku) to mocna okazja z pushem. Klucze = platformy

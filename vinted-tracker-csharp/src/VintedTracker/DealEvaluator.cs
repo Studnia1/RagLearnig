@@ -107,7 +107,7 @@ public static class DealEvaluator
         "zabawk", "mcdonald", "happy meal", "spielzeug", "jouet", "juguete",
         "giocattolo", "speelgoed", "hracka", " toy ", "toys", "miecze",
         // puste pudełka / sama płyta / niekompletne
-        "karton", "sam box", "box only", "empty box", " box ", "pudelko",
+        "karton", "sam box", "box only", "empty box", " box ", "pudelko", " pudl",
         "krabice", " doboz", "boite", "scatola", "bez gry",
         "kun disk", "disc only", "disk only", "sama plyt", "solo disco",
         "bez pudelk", "sam kartrid", "cartridge only", "cart only", " loose",
