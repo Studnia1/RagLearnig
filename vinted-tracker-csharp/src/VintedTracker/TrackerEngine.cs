@@ -161,7 +161,10 @@ public sealed class TrackerEngine(
                     {
                         var ai = await vision.VerifyAsync(game.Title, candidate.Title, candidate.PhotoUrl, ct);
                         if (ai is { IsMatch: false })
+                        {
+                            Log.Info($"AI odrzucił najtańszą \"{candidate.Title}\" ({game.Title}): {ai.Note}");
                             continue;
+                        }
                         cheapest = candidate;
                         aiNote = ai is null ? null : $"AI: {(ai.IsMatch ? "✅" : "")} {ai.Note}".Trim();
                         break;
@@ -426,11 +429,14 @@ public sealed class TrackerEngine(
                 gameTitle ?? "?", listing.Title, listing.PhotoUrl, ct, platform,
                 console: huntHit);
             if (ai is { IsMatch: false })
+            {
+                Log.Info($"AI odrzucił alert \"{listing.Title}\" ({gameTitle}): {ai.Note}");
                 verdict = verdict with
                 {
                     Tier = DealTier.Suspicious,
                     Reasons = [.. verdict.Reasons, $"AI po zdjęciu: {ai.Note}"],
                 };
+            }
             else if (ai is { IsMatch: true })
                 verdict = verdict with
                 {
