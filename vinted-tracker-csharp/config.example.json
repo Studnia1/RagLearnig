@@ -25,6 +25,8 @@
     // Weryfikacja ofert po zdjęciach (Claude API) — włącza się, gdy ustawisz
     // zmienną ANTHROPIC_API_KEY. "claude-haiku-4-5" tnie koszt ~5x.
     "visionModel": "claude-opus-5",
+    // AI odrzuca też gry bez pudełka widoczne na zdjęciu (sam kartridż/płyta).
+    "visionRequireComplete": true,
     // Platformy wycinane całkowicie (nie wchodzą do median ani okazji).
     "excludedPlatforms": ["xbox-one", "xbox-series", "xbox360"],
     // Polowanie na tanie KONSOLE: oferta ze słowem "konsola/console" i tą

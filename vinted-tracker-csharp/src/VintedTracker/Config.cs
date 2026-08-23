@@ -35,6 +35,10 @@ public sealed class Defaults
     /// przy prostszej ocenie.</summary>
     [JsonPropertyName("visionModel")] public string VisionModel { get; init; } = "claude-opus-5";
 
+    /// <summary>Gdy true, AI odrzuca też oferty gier bez pudełka (sam
+    /// kartridż/płyta widoczne na zdjęciu) — nie tylko złą grę/platformę.</summary>
+    [JsonPropertyName("visionRequireComplete")] public bool VisionRequireComplete { get; init; } = true;
+
     /// <summary>Platformy wycinane całkowicie (jak gruz) — oferty nie wchodzą
     /// do median, okazji ani gier auto.</summary>
     [JsonPropertyName("excludedPlatforms")] public List<string> ExcludedPlatforms { get; init; } =

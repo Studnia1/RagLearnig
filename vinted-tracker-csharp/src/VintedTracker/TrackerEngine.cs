@@ -160,9 +160,10 @@ public sealed class TrackerEngine(
                     foreach (var candidate in candidates.Take(3))
                     {
                         var ai = await vision.VerifyAsync(game.Title, candidate.Title, candidate.PhotoUrl, ct);
-                        if (ai is { IsMatch: false })
+                        if (ai is { IsMatch: false }
+                            || (config.Defaults.VisionRequireComplete && ai is { Complete: false }))
                         {
-                            Log.Info($"AI odrzucił najtańszą \"{candidate.Title}\" ({game.Title}): {ai.Note}");
+                            Log.Info($"AI odrzucił najtańszą \"{candidate.Title}\" ({game.Title}): {ai!.Note}");
                             continue;
                         }
                         cheapest = candidate;
@@ -428,9 +429,13 @@ public sealed class TrackerEngine(
             var ai = await vision.VerifyAsync(
                 gameTitle ?? "?", listing.Title, listing.PhotoUrl, ct, platform,
                 console: huntHit);
-            if (ai is { IsMatch: false })
+            // Odrzucamy złą grę/platformę, a przy visionRequireComplete także
+            // gry bez pudełka (konsole ocenia tylko is_match).
+            var aiRejected = ai is { IsMatch: false }
+                || (!huntHit && config.Defaults.VisionRequireComplete && ai is { Complete: false });
+            if (aiRejected)
             {
-                Log.Info($"AI odrzucił alert \"{listing.Title}\" ({gameTitle}): {ai.Note}");
+                Log.Info($"AI odrzucił alert \"{listing.Title}\" ({gameTitle}): {ai!.Note}");
                 verdict = verdict with
                 {
                     Tier = DealTier.Suspicious,

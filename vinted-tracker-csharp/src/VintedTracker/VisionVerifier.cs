@@ -97,8 +97,11 @@ public sealed class VisionVerifier
         Oceń po zdjęciu:
         - is_match: czy zdjęcie pokazuje fizyczny egzemplarz TEJ gry na WŁAŚCIWĄ
           platformę (nie merch, nie samo puste pudełko, nie karty, nie inną grę,
-          nie wydanie na inną konsolę, nie wersję z japońską okładką)?
-        - complete: czy wygląda na kompletny zestaw (pudełko z grą)?
+          nie wydanie na inną konsolę, nie wersję z japońską okładką)? Zwróć
+          szczególną uwagę na logo platformy na okładce.
+        - complete: false TYLKO gdy zdjęcie wyraźnie pokazuje brak pudełka
+          (sam kartridż / sama płyta) albo otwarte puste pudełko; zamknięte
+          pudełko z okładką = true.
         - note: krótkie uzasadnienie po polsku (maks. 12 słów).
 
         Odpowiedz WYŁĄCZNIE JSON-em: {"is_match": bool, "complete": bool, "note": "..."}
