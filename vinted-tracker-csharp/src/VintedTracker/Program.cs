@@ -81,9 +81,24 @@ public static class Program
         builder.Services.AddSingleton(engine);
         builder.Services.AddHostedService(_ => new PollingService(engine, config.Defaults.PollIntervalSeconds));
 
+        // Znacznik wersji UI: po aktualizacji trackera od razu widać w pasku
+        // statusu, czy przeglądarka pokazuje nowy dashboard, czy stary z cache.
+        var uiBuilt = File.GetLastWriteTime(
+            Path.Combine(AppContext.BaseDirectory, "wwwroot", "index.html"));
+
         var app = builder.Build();
         app.UseDefaultFiles();
-        app.UseStaticFiles();
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            // Dashboard to jeden plik HTML aktualizowany razem z aplikacją —
+            // przeglądarka musi go sprawdzać przy każdym wejściu, inaczej po
+            // git pullu użytkownik ogląda poprzednią wersję interfejsu.
+            OnPrepareResponse = ctx =>
+            {
+                if (ctx.File.Name.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+                    ctx.Context.Response.Headers.CacheControl = "no-cache, must-revalidate";
+            },
+        });
 
         app.MapGet("/api/overview", () =>
         {
@@ -150,6 +165,7 @@ public static class Program
                     engine.QueueScanned,
                     config.Defaults.MinMargin,
                     engine.CheapestScanInProgress,
+                    UiBuilt = uiBuilt,
                     VisionEnabled = vision.Enabled,
                     config.Defaults.VisionModel,
                     Blocklist = store.GetBlocklist(),

@@ -364,7 +364,8 @@ async function refresh() {
             : `${st.autoGames} gier auto · `) +
           `w bazie: ${st.itemsTotal} ofert · co ${st.pollIntervalSeconds} s · ` +
           `${st.baseUrl.replace('https://', '')}${st.catalogInfo ? ' · katalog: ' + st.catalogInfo : ''}` +
-          ` · AI: ${st.visionEnabled ? '🟢 ' + st.visionModel : '🔴 wyłączona (brak klucza)'}`;
+          ` · AI: ${st.visionEnabled ? '🟢 ' + st.visionModel : '🔴 wyłączona (brak klucza)'}` +
+          ` · UI z ${new Date(st.uiBuilt).toLocaleString('pl-PL', { dateStyle: 'short', timeStyle: 'short' })}`;
   } catch {
     document.getElementById('status').textContent = 'Brak połączenia z trackerem';
   }
