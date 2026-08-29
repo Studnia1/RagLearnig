@@ -41,7 +41,7 @@ public sealed class TrackerEngine(
 
     /// <summary>Bump przy każdej zmianie wbudowanych filtrów/platform — wymusza
     /// jednorazowe porządki w bazie przy najbliższym cyklu.</summary>
-    private const string FilterVersion = "10";
+    private const string FilterVersion = "11";
 
     /// <summary>Wyniki "najtańsze teraz" przeżywają restart (meta w SQLite).</summary>
     public void LoadPersistedCheapest()
@@ -77,7 +77,7 @@ public sealed class TrackerEngine(
         // (np. wydania Switch 2 odrzucane przez strażnika cyfr).
         var rows = store.SnapshotForSweep();
         var changes = new List<SqliteStore.ReindexRow>();
-        int attached = 0, detached = 0, filtered = 0;
+        int attached = 0, detached = 0, filtered = 0, cleared = 0;
         foreach (var row in rows)
         {
             var normKey = TitleNormalizer.NormKey(row.Title);
@@ -99,17 +99,36 @@ public sealed class TrackerEngine(
                     gameTitle = auto.Title;
                 }
             }
+            // Polowania na konsole żyją obok filtra gier, więc i tu liczymy je
+            // osobno — inaczej dawne trafienia (pady, akcesoria) zostałyby
+            // w feedzie okazji na zawsze.
+            if (DealEvaluator.ConsoleHuntVerdict(
+                    row.Title, platform, row.Price, config.Defaults.PlatformHunts) is not null)
+            {
+                gameKey = $"hunt:{platform}";
+                gameTitle = $"Konsola {platform}";
+            }
+
+            // Tier znika, gdy oferta przestała należeć do tego, co ją okazją
+            // uczyniło: wypadła ze wszystkich gier i polowań, przeniosła się do
+            // innej gry, albo wpadła pod filtr gruzu. Samo nadanie klucza
+            // dawnemu trafieniu polowania (kiedyś bezkluczowemu) tier zachowuje.
+            var belongs = gameKey is not null;
+            var movedGame = row.GameKey is not null && gameKey != row.GameKey;
+            var resetTier = row.Tier != "None"
+                && (!belongs || movedGame || (row.Relevant && !relevant));
             if (normKey == row.NormKey && platform == row.Platform
-                && relevant == row.Relevant && gameKey == row.GameKey)
+                && relevant == row.Relevant && gameKey == row.GameKey && !resetTier)
                 continue;
             if (row.Relevant && !relevant)
                 filtered++;
             if (gameKey != row.GameKey)
                 _ = gameKey is null ? detached++ : attached++;
+            if (resetTier)
+                cleared++;
             changes.Add(new SqliteStore.ReindexRow(
                 row.Id, normKey, platform, gameKey,
-                gameKey is null ? null : gameTitle, relevant,
-                ResetTier: gameKey != row.GameKey || (row.Relevant && !relevant)));
+                gameKey is null ? null : gameTitle, relevant, resetTier));
         }
         store.ApplyReindex(changes);
         // W trybie wishlisty słownik gier auto jest martwy: reindeksacja właśnie
@@ -124,7 +143,8 @@ public sealed class TrackerEngine(
         store.SetMeta("cheapest_at", "");
         store.SetMeta("filter_version", FilterVersion);
         Log.Info($"Porządki po zmianie filtrów: {changes.Count} ofert zaktualizowanych " +
-                 $"({attached} podpiętych do gier, {detached} odpiętych, {filtered} odfiltrowanych; " +
+                 $"({attached} podpiętych do gier, {detached} odpiętych, {filtered} odfiltrowanych, " +
+                 $"{cleared} usuniętych z okazji; " +
                  $"przejrzano {rows.Count}); wyniki najtańszych wyzerowane do ponownego skanu");
     }
 
@@ -524,6 +544,9 @@ public sealed class TrackerEngine(
         {
             verdict = hunt;
             huntHit = true;
+            // Własny klucz gry: dzięki niemu trafienie polowania jest w feedzie
+            // odróżnialne od ofert, które po prostu kiedyś wpadły do bazy.
+            gameKey = $"hunt:{platform}";
             gameTitle = $"Konsola {platform}";
         }
 

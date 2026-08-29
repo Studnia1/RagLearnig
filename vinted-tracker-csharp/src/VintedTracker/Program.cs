@@ -114,7 +114,7 @@ public static class Program
                     Cheapest = cheapest,
                 };
             });
-            var deals = store.RecentDeals(150).Select(d => new
+            var deals = store.RecentDeals(150, config.Defaults.WatchlistOnly).Select(d => new
             {
                 d.Id,
                 Query = d.Game,

@@ -131,16 +131,20 @@ public sealed class SqliteStore : IDisposable
         }
     }
 
-    public IReadOnlyList<DealRow> RecentDeals(int limit = 150)
+    /// <summary>Feed okazji. W trybie wishlisty pokazujemy wyłącznie oferty
+    /// przypięte do śledzonej gry albo do polowania na konsolę — cokolwiek
+    /// innego trafiło kiedyś do bazy, nie jest okazją, której ktoś szukał.</summary>
+    public IReadOnlyList<DealRow> RecentDeals(int limit = 150, bool watchlistOnly = false)
     {
         lock (_lock)
         {
             using var cmd = _conn.CreateCommand();
-            cmd.CommandText = """
+            cmd.CommandText = $"""
                 SELECT id, COALESCE(game_title, norm_key), title, price, currency,
                        url, photo_url, tier, score, reference_price, reasons, first_seen
                 FROM items
                 WHERE tier != 'None'
+                {(watchlistOnly ? "AND (game_key LIKE 'watch:%' OR game_key LIKE 'hunt:%')" : "")}
                 ORDER BY first_seen DESC
                 LIMIT $limit
                 """;
@@ -349,16 +353,19 @@ public sealed class SqliteStore : IDisposable
 
     public sealed record SweepRow(
         long Id, string Title, bool Relevant, string? GameKey,
-        string NormKey, string? Platform, string? GameTitle);
+        string NormKey, string? Platform, string? GameTitle, decimal Price, string Tier);
 
-    /// <summary>Wiersze do ponownej oceny po zmianie wbudowanych filtrów.</summary>
+    /// <summary>Wiersze do ponownej oceny po zmianie wbudowanych filtrów.
+    /// Bierzemy też oferty nietrafne bez gry, jeśli mają tier — to trafienia
+    /// polowań na konsole (gruz z feedu okazji też trzeba umieć posprzątać).</summary>
     public IReadOnlyList<SweepRow> SnapshotForSweep()
     {
         lock (_lock)
         {
             using var cmd = _conn.CreateCommand();
-            cmd.CommandText = "SELECT id, title, relevant, game_key, norm_key, platform, game_title " +
-                              "FROM items WHERE relevant = 1 OR game_key IS NOT NULL";
+            cmd.CommandText =
+                "SELECT id, title, relevant, game_key, norm_key, platform, game_title, price, tier " +
+                "FROM items WHERE relevant = 1 OR game_key IS NOT NULL OR tier != 'None'";
             var rows = new List<SweepRow>();
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
@@ -367,7 +374,8 @@ public sealed class SqliteStore : IDisposable
                     reader.IsDBNull(3) ? null : reader.GetString(3),
                     reader.IsDBNull(4) ? "" : reader.GetString(4),
                     reader.IsDBNull(5) ? null : reader.GetString(5),
-                    reader.IsDBNull(6) ? null : reader.GetString(6)));
+                    reader.IsDBNull(6) ? null : reader.GetString(6),
+                    (decimal)reader.GetDouble(7), reader.GetString(8)));
             return rows;
         }
     }

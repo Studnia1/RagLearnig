@@ -32,6 +32,21 @@ public class SqliteStoreTests : IDisposable
     }
 
     [Fact]
+    public void WatchlistOnlyFeedShowsOnlyWatchedGamesAndHunts()
+    {
+        _store.Insert(Item(1, 90, tier: DealTier.Strong));
+        _store.Insert(Item(2, 60, gameKey: "hunt:3ds", normKey: "konsola 3ds", tier: DealTier.Strong));
+        // Gruz z ery firehose'a: okazja bez przypisania do śledzonej gry.
+        _store.Insert(Item(3, 40, gameKey: null, normKey: "jakas obca gra", tier: DealTier.Deal));
+
+        var all = _store.RecentDeals();
+        Assert.Equal(3, all.Count);
+
+        var watched = _store.RecentDeals(watchlistOnly: true);
+        Assert.Equal([1L, 2L], watched.Select(d => d.Id).Order());
+    }
+
+    [Fact]
     public void PricesForReturnsOnlyThatGame()
     {
         _store.Insert(Item(1, 200));
