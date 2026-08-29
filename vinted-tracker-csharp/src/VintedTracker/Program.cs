@@ -157,6 +157,13 @@ public static class Program
             });
         });
 
+        app.MapPost("/api/deals/clear", () =>
+        {
+            var cleared = store.ClearDeals();
+            Log.Info($"Feed okazji wyczyszczony ręcznie: {cleared} ofert");
+            return Results.Ok(new { Cleared = cleared });
+        });
+
         app.MapPost("/api/games", (GameWatch game) =>
         {
             if (string.IsNullOrWhiteSpace(game.Query) || string.IsNullOrWhiteSpace(game.Title))

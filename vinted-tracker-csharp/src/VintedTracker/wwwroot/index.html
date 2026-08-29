@@ -92,7 +92,10 @@
     font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--border);
     border-radius: 8px; background: var(--surface); color: var(--ink);
   }
-  .filters { display: flex; gap: 8px; margin: 0 0 12px; flex-wrap: wrap; }
+  .filterbar { display: flex; gap: 8px; align-items: center; margin: 0 0 12px; flex-wrap: wrap; }
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; }
+  button.danger { margin-left: auto; color: var(--err); border-color: var(--err); }
+  button.danger:hover:not(:disabled) { background: var(--err); color: #fff; }
   .filters button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
   .empty { color: var(--ink-3); padding: 20px; text-align: center; background: var(--surface);
     border: 1px dashed var(--border); border-radius: 10px; }
@@ -157,11 +160,15 @@
   </header>
 
   <h2>Okazje</h2>
-  <div class="filters" id="filters" role="group" aria-label="Filtr okazji">
-    <button data-f="all" aria-pressed="true">Wszystkie</button>
-    <button data-f="Strong" aria-pressed="false">🔥 Mocne</button>
-    <button data-f="Deal" aria-pressed="false">Okazje</button>
-    <button data-f="Suspicious" aria-pressed="false">⚠️ Podejrzane</button>
+  <div class="filterbar">
+    <div class="filters" id="filters" role="group" aria-label="Filtr okazji">
+      <button data-f="all" aria-pressed="true">Wszystkie</button>
+      <button data-f="Strong" aria-pressed="false">🔥 Mocne</button>
+      <button data-f="Deal" aria-pressed="false">Okazje</button>
+      <button data-f="Suspicious" aria-pressed="false">⚠️ Podejrzane</button>
+    </div>
+    <button id="clearDeals" class="danger"
+      title="Usuwa wszystkie oferty z listy okazji. Ceny zostają w bazie, a wyczyszczone oferty już nie wrócą.">🧹 Wyczyść okazje</button>
   </div>
   <div class="blockrow" id="blockrow" hidden>
     <span>Gruz-lista:</span><span id="blockchips"></span>
@@ -369,6 +376,22 @@ document.getElementById('filters').addEventListener('click', e => {
   for (const x of e.currentTarget.querySelectorAll('button'))
     x.setAttribute('aria-pressed', String(x === b));
   if (lastData) renderDeals(lastData.deals);
+});
+
+document.getElementById('clearDeals').addEventListener('click', async e => {
+  const shown = lastData?.deals?.length ?? 0;
+  if (!shown) return;
+  if (!confirm(`Usunąć wszystkie oferty z listy okazji (${shown})?\n\n` +
+      'Ceny zostaną w bazie i nadal liczą się do median, ale te oferty nie wrócą na listę.')) return;
+  e.target.disabled = true;
+  try {
+    const r = await fetch('/api/deals/clear', { method: 'POST' });
+    const { cleared } = await r.json();
+    await refresh();
+    document.getElementById('status').textContent = `Wyczyszczono ${cleared} ofert z listy okazji`;
+  } finally {
+    e.target.disabled = false;
+  }
 });
 
 document.getElementById('checkNow').addEventListener('click', async e => {

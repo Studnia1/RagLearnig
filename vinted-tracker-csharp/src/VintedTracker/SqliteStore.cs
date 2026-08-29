@@ -321,6 +321,19 @@ public sealed class SqliteStore : IDisposable
         }
     }
 
+    /// <summary>Czyści feed okazji: wszystkie oferty tracą status okazji.
+    /// Same oferty zostają w bazie — nadal budują mediany i nadal są "znane",
+    /// więc wyczyszczona oferta nie wróci przy kolejnym skanie.</summary>
+    public int ClearDeals()
+    {
+        lock (_lock)
+        {
+            using var cmd = _conn.CreateCommand();
+            cmd.CommandText = "UPDATE items SET tier = 'None' WHERE tier != 'None'";
+            return cmd.ExecuteNonQuery();
+        }
+    }
+
     /// <summary>Kasuje słownik gier auto (tryb wishlisty ich nie używa).
     /// Oferty odpina od nich reindeksacja — tu znika sam słownik.</summary>
     public int PurgeAutoGames()
