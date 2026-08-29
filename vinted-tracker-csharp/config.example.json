@@ -9,6 +9,17 @@
     "watchlistPath": "games.json",
     "listenUrl": "http://localhost:5177",
 
+    // Tryb wishlisty: śledzimy WYŁĄCZNIE gry z games.json (plus polowania na
+    // konsole), każdą własnym zapytaniem w kolejce. false = dodatkowo firehose
+    // po całym katalogu gier: większe pokrycie, ale w okazjach ląduje sporo
+    // szumu spoza wishlisty.
+    "watchlistOnly": true,
+    // Ile gier z kolejki odpytać w jednym cyklu. Pełny obieg trwa
+    // (liczba gier / to) × pollIntervalSeconds — przy 166 grach, 6 na cykl
+    // i cyklu 300 s każda gra wraca co ~2,3 h.
+    "watchQueuePerCycle": 6,
+
+    // Poniższe działa tylko przy watchlistOnly = false.
     // ID katalogu "Gry" na danej domenie Vinted. Puste = tracker sam spróbuje
     // znaleźć je w drzewie kategorii przy pierwszym cyklu; jeśli mu się nie
     // uda, podejrzyj ID w URL katalogu w przeglądarce i wpisz tutaj.

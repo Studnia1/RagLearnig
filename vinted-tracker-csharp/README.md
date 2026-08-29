@@ -1,28 +1,33 @@
 # Vinted Games Tracker (C#)
 
-Śledzi **wszystkie** nowo dodawane oferty w kategorii gier na Vinted,
-rozpoznaje tytuły i platformy, buduje cennik rynkowy i alarmuje o okazjach
-z realną marżą — pod kupowanie gier tanio (dla siebie albo do odsprzedaży).
+Śledzi oferty gier na Vinted, rozpoznaje tytuły i platformy, buduje cennik
+rynkowy i alarmuje o okazjach z realną marżą — pod kupowanie gier tanio
+(dla siebie albo do odsprzedaży).
 C#/.NET 8; jedyna zależność aplikacji to Microsoft.Data.Sqlite.
 
 ![Dashboard](docs/dashboard.png)
 
-## Architektura: firehose + watermark
+## Architektura: kolejka wyszukiwań (tryb wishlisty)
 
-Zamiast zapytania per gra tracker pobiera **jeden strumień najnowszych ofert
-z całej kategorii gier** i stronicuje tylko do miejsca, w którym zaczynają
-się oferty już widziane. Obciążenie nie zależy więc od liczby śledzonych
-gier — to zwykle **1–2 zapytania co cykl**, niezależnie czy śledzisz 16 gier
-czy cały rynek. Duży jest tylko pierwszy przebieg (backfill, domyślnie
-20 stron ≈ 2000 ofert), który buduje bazę cen i nie alertuje.
+Domyślnie (`watchlistOnly: true`) tracker śledzi **wyłącznie gry z
+`games.json`**. Każda gra dostaje własne celowane zapytanie, a kolejka
+obraca nimi cyklicznie: co cykl idzie `watchQueuePerCycle` gier — zawsze
+tych najdawniej sprawdzanych — więc żadna nie zostaje w tyle. Przy 166
+grach, 6 na cykl i cyklu 5 min każda gra wraca co ~2,3 h. Pierwszy skan gry
+tylko zasiewa bazę cen (bez alertów); kolejne obiegi alertują normalnie.
+Postęp widać w logach (`Kolejka wyszukiwań: …`) i w pasku dashboardu.
 
-Firehose ma jednak limit stronicowania Vinted (~1000 ofert wstecz), więc
-przy dużym ruchu część ofert nigdy przez niego nie przepływa. Domyka to
-**kolejka celowanych wyszukiwań**: co cykl tracker odpytuje kilka śledzonych
-gier (od najdawniej sprawdzonej), więc każda gra ma gwarantowany własny skan
-co kilka godzin. Pierwszy skan gry tylko zasiewa bazę cen; kolejne obiegi
-alertują normalnie — nowa oferta znaleziona kolejką to okazja, którą
-firehose przegapił. Postęp widać w logach (`Kolejka wyszukiwań: …`).
+Do tego jedno **polowanie na konsolę** na cykl (rotacyjnie po platformach
+z `platformHunts`), żeby tanie 3DS-y i Vity nie umknęły.
+
+Ceną za czystotę jest zasięg: oferta gry, której nie ma na wishliście,
+nie istnieje dla trackera. Kto woli pokrycie od czystości, ustawia
+`watchlistOnly: false` — wtedy dodatkowo działa **firehose**: jeden strumień
+najnowszych ofert z całej kategorii gier, stronicowany tylko do pierwszej
+strony bez nowości (watermark), plus **auto-promocja** — nierozpoznane
+tytuły grupują się po znormalizowanej nazwie i po `autoPromoteMinSample`
+ofertach same stają się śledzoną grą. Wadą jest szum: w okazjach ląduje
+wszystko, co rynek akurat wyrzuci.
 
 Nintendo **Switch 2 to osobna platforma** (`switch2`) z osobnymi cenami:
 "…Switch 2" w tytule skleja się w jeden znacznik, więc wydania Switch 2 nie
@@ -39,12 +44,11 @@ Każda nowa oferta przechodzi przez:
    bez słów-szumu ("NOWA", "folia", "stan idealny"); kolejność słów bez
    znaczenia. **Platforma wykrywana osobno** (Switch/PS4/PS5/Xbox…), bo ta
    sama gra na różnych platformach ma różne ceny.
-3. **Dopasowanie do gry** — najpierw watchlista (`games.json`; pewne
-   dopasowanie wszystkich tokenów zapytania lub aliasu; niejednoznaczność,
-   np. bundle "Sword + Shield", nie alertuje). Nierozpoznane oferty grupują
-   się po znormalizowanym tytule i platformie — gdy grupa urośnie do
-   `autoPromoteMinSample` ofert, staje się grą **auto** i od tej pory też ma
-   medianę i może alertować. Słownik rośnie więc sam z rynkiem.
+3. **Dopasowanie do gry** — watchlista `games.json`: pewne dopasowanie
+   wszystkich tokenów zapytania lub aliasu; niejednoznaczność (np. bundle
+   "Sword + Shield") nie alertuje. Oferta, która do niczego nie pasuje,
+   nie dostaje mediany ani nie trafia do okazji (przy
+   `watchlistOnly: false` może za to awansować na grę **auto**).
 4. **Ocenę okazji** — jak wcześniej: przycięta mediana (min 5 próbek),
    mocna okazja = dwa niezależne sygnały (≤60% mediany **i** dolny kwartyl,
    albo ≤85% ręcznego progu), zwykła ≤75% mediany, ≤30% mediany =
@@ -53,8 +57,8 @@ Każda nowa oferta przechodzi przez:
    z marżą `mediana − cena ≥ minMargin` (domyślnie **50 zł**), żeby alerty
    były warte odbioru z telefonu. Wszystko i tak ląduje w dashboardzie.
 
-Stan mieszka w SQLite (`data/tracker.sqlite3`) — baza rośnie z rynkiem
-i przeżywa restarty (backfill nie powtarza się).
+Stan mieszka w SQLite (`data/tracker.sqlite3`) — baza cen i pozycja kolejki
+przeżywają restarty, więc tracker można spokojnie wyłączać i włączać.
 
 ## Wymagania
 

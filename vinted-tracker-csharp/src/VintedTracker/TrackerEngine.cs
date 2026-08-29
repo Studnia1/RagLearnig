@@ -41,7 +41,7 @@ public sealed class TrackerEngine(
 
     /// <summary>Bump przy każdej zmianie wbudowanych filtrów/platform — wymusza
     /// jednorazowe porządki w bazie przy najbliższym cyklu.</summary>
-    private const string FilterVersion = "9";
+    private const string FilterVersion = "10";
 
     /// <summary>Wyniki "najtańsze teraz" przeżywają restart (meta w SQLite).</summary>
     public void LoadPersistedCheapest()
@@ -112,6 +112,11 @@ public sealed class TrackerEngine(
                 ResetTier: gameKey != row.GameKey || (row.Relevant && !relevant)));
         }
         store.ApplyReindex(changes);
+        // W trybie wishlisty słownik gier auto jest martwy: reindeksacja właśnie
+        // odpięła od niego oferty (pusty autoIndex), więc kasujemy i sam słownik.
+        var purged = config.Defaults.WatchlistOnly ? store.PurgeAutoGames() : 0;
+        if (purged > 0)
+            Log.Info($"Tryb wishlisty: usunięto {purged} gier auto ze słownika");
         // Zapamiętane "najtańsze teraz" liczyły się starymi filtrami — czyścimy
         // i wymuszamy świeży skan, żeby kolumna nie rozjeżdżała się z panelami.
         Cheapest.Clear();
@@ -241,86 +246,48 @@ public sealed class TrackerEngine(
         LastCycleBlocked = false;
         try
         {
-            var catalogIds = await EnsureCatalogAsync(ct);
-            if (catalogIds.Count == 0)
-                return; // LastError ustawione w EnsureCatalogAsync
-
-            // Backfill rozpoznajemy po pustej bazie — przeżywa restart procesu.
-            var firstRun = store.ItemCount() == 0;
-            var maxPages = firstRun ? config.Defaults.BackfillPages : config.Defaults.MaxPagesPerCycle;
+            var watchlistOnly = config.Defaults.WatchlistOnly;
             var matcher = new GameMatcher(watchlist.Snapshot().Select(GamePattern.FromWatch).ToList());
-            var autoIndex = store.AutoGameIndex();
+            // W trybie wishlisty gry "auto" nie powstają i nie dopasowują ofert —
+            // pusty słownik trzyma tę decyzję w jednym miejscu.
+            var autoIndex = watchlistOnly ? [] : store.AutoGameIndex();
             _blocklist = store.GetBlocklist();
             RunSweepIfNeeded(matcher, autoIndex);
             _cJunk = _cWatch = _cAuto = _cDeal = _cStrong = _cSusp = 0;
 
             var pages = 0;
             var newItems = 0;
-            for (var page = 1; page <= maxPages; page++)
+
+            if (!watchlistOnly)
             {
-                ct.ThrowIfCancellationRequested();
-                IReadOnlyList<Listing> listings;
-                try
-                {
-                    listings = await client.CatalogPageAsync(catalogIds, page, ct: ct);
-                }
-                catch (HttpRequestException e) when (e.Message.Contains("Page offset is invalid"))
-                {
-                    // Vinted nie pozwala stronicować głębiej niż ~1000 ofert —
-                    // to naturalny koniec backfillu, nie błąd.
-                    Log.Info($"Limit stronicowania Vinted na stronie {page} — kończę przebieg");
-                    break;
-                }
-                catch (VintedBlockedException e)
-                {
-                    LastCycleBlocked = true;
-                    LastError = e.Message;
-                    Log.Warn($"{e.Message}");
-                    break;
-                }
-                catch (Exception e) when (e is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
-                {
-                    LastError = e.Message;
-                    Log.Error($"Strona {page} katalogu nie powiodła się: {e.Message}");
-                    break;
-                }
-
-                pages++;
-                var pageNew = 0;
-                foreach (var listing in listings)
-                {
-                    if (store.IsKnown(listing.Id))
-                        continue;
-                    pageNew++;
-                    await ProcessListingAsync(listing, matcher, autoIndex, firstRun, ct);
-                }
-                newItems += pageNew;
-                LastError = null;
-
-                // Watermark: strona bez żadnej nowej oferty = dotarliśmy do
-                // miejsca, które znamy. Pusta strona = koniec katalogu.
-                if (pageNew == 0 || listings.Count == 0)
-                    break;
-                await Task.Delay(TimeSpan.FromSeconds(1.5 + Random.Shared.NextDouble() * 1.5), ct);
+                var catalogIds = await EnsureCatalogAsync(ct);
+                if (catalogIds.Count == 0)
+                    return; // LastError ustawione w EnsureCatalogAsync
+                (pages, newItems) = await RunFirehoseAsync(catalogIds, matcher, autoIndex, ct);
             }
 
             if (!LastCycleBlocked)
-                await RunWatchQueueAsync(matcher, autoIndex, ct);
+                newItems += await RunWatchQueueAsync(matcher, autoIndex, ct);
 
-            var promoted = store.PromoteAutoGames(config.Defaults.AutoPromoteMinSample);
-            if (promoted > 0)
-                Log.Info($"Auto-promocja: {promoted} nowych grup gier w słowniku");
+            if (!watchlistOnly)
+            {
+                var promoted = store.PromoteAutoGames(config.Defaults.AutoPromoteMinSample);
+                if (promoted > 0)
+                    Log.Info($"Auto-promocja: {promoted} nowych grup gier w słowniku");
+            }
 
             LastCyclePages = pages;
             LastCycleNewItems = newItems;
             LastCycleFinished = DateTimeOffset.UtcNow;
-            Log.Info($"Cykl: {pages} str., {newItems} nowych (gruz {_cJunk}, watchlista {_cWatch}, " +
-                     $"auto {_cAuto}); okazje: {_cStrong} mocnych, {_cDeal} zwykłych, {_cSusp} podejrzanych; " +
+            Log.Info($"Cykl: {(watchlistOnly ? $"kolejka {QueueScanned}/{QueueTotal}" : $"{pages} str.")}, " +
+                     $"{newItems} nowych (gruz {_cJunk}, watchlista {_cWatch}" +
+                     (watchlistOnly ? "" : $", auto {_cAuto}") + "); " +
+                     $"okazje: {_cStrong} mocnych, {_cDeal} zwykłych, {_cSusp} podejrzanych; " +
                      $"baza {store.ItemCount()}");
 
             // Raz na dobę odświeżamy "najtańsze teraz" automatycznie — kolumna
             // żyje bez klikania, a przycisk zostaje do odświeżenia na żądanie.
-            if (!LastCycleBlocked && !firstRun && CheapestScanIsDue())
+            if (!LastCycleBlocked && CheapestScanIsDue())
             {
                 Log.Info("Automatyczny dzienny skan najtańszych…");
                 await ScanCheapestAsync(ct);
@@ -332,46 +299,140 @@ public sealed class TrackerEngine(
         }
     }
 
-    /// <summary>
-    /// Kolejka celowanych wyszukiwań: każda śledzona gra dostaje cyklicznie
-    /// własne zapytanie do wyszukiwarki, w kolejności od najdawniej sprawdzonej.
-    /// Firehose ma limit stronicowania (~1000 ofert wstecz), więc przy dużym
-    /// ruchu część ofert nigdy przez niego nie przepływa — kolejka gwarantuje,
-    /// że żadna gra nie zostaje w tyle. Pierwszy skan gry tylko zasiewa bazę
-    /// cen (bez alertów); kolejne obiegi alertują normalnie, bo nowe oferty
-    /// w nich to świeże okazje, które firehose przegapił.
-    /// </summary>
-    /// <summary>Ile gier z kolejki sprawdzić w jednym cyklu — mało, żeby nie
-    /// prowokować anty-bota; pełny obieg i tak domyka się w kilka godzin.</summary>
-    private const int QueueBatchPerCycle = 4;
-
-    private async Task RunWatchQueueAsync(
+    /// <summary>Firehose: strumień najnowszych ofert z całej kategorii,
+    /// stronicowany do pierwszej strony bez nowości (watermark).</summary>
+    private async Task<(int Pages, int NewItems)> RunFirehoseAsync(
+        IReadOnlyList<int> catalogIds,
         GameMatcher matcher,
         Dictionary<(string, string), (string Key, string Title)> autoIndex,
         CancellationToken ct)
     {
-        var games = watchlist.Snapshot();
-        if (games.Count == 0)
-            return;
-        var due = games
-            .Select(g =>
-            {
-                var metaKey = "watchscan:" + g.Query.ToLowerInvariant();
-                var last = long.TryParse(store.GetMeta(metaKey), out var ts) ? ts : 0L;
-                return (Game: g, MetaKey: metaKey, Last: last);
-            })
-            .OrderBy(x => x.Last)
-            .Take(QueueBatchPerCycle)
-            .ToList();
-
-        var scanned = new List<string>();
-        foreach (var (game, metaKey, last) in due)
+        // Backfill rozpoznajemy po pustej bazie — przeżywa restart procesu.
+        var firstRun = store.ItemCount() == 0;
+        var maxPages = firstRun ? config.Defaults.BackfillPages : config.Defaults.MaxPagesPerCycle;
+        var pages = 0;
+        var newItems = 0;
+        for (var page = 1; page <= maxPages; page++)
         {
             ct.ThrowIfCancellationRequested();
             IReadOnlyList<Listing> listings;
             try
             {
-                listings = await client.SearchAsync(game.Query, ct: ct);
+                listings = await client.CatalogPageAsync(catalogIds, page, ct: ct);
+            }
+            catch (HttpRequestException e) when (e.Message.Contains("Page offset is invalid"))
+            {
+                // Vinted nie pozwala stronicować głębiej niż ~1000 ofert —
+                // to naturalny koniec backfillu, nie błąd.
+                Log.Info($"Limit stronicowania Vinted na stronie {page} — kończę przebieg");
+                break;
+            }
+            catch (VintedBlockedException e)
+            {
+                LastCycleBlocked = true;
+                LastError = e.Message;
+                Log.Warn($"{e.Message}");
+                break;
+            }
+            catch (Exception e) when (e is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+            {
+                LastError = e.Message;
+                Log.Error($"Strona {page} katalogu nie powiodła się: {e.Message}");
+                break;
+            }
+
+            pages++;
+            var pageNew = 0;
+            foreach (var listing in listings)
+            {
+                if (store.IsKnown(listing.Id))
+                    continue;
+                pageNew++;
+                await ProcessListingAsync(listing, matcher, autoIndex, firstRun, ct);
+            }
+            newItems += pageNew;
+            LastError = null;
+
+            // Watermark: strona bez żadnej nowej oferty = dotarliśmy do
+            // miejsca, które znamy. Pusta strona = koniec katalogu.
+            if (pageNew == 0 || listings.Count == 0)
+                break;
+            await Task.Delay(TimeSpan.FromSeconds(1.5 + Random.Shared.NextDouble() * 1.5), ct);
+        }
+        return (pages, newItems);
+    }
+
+    /// <summary>Cel jednego zapytania w kolejce: gra z wishlisty albo polowanie
+    /// na konsolę. <paramref name="MetaKey"/> trzyma stempel ostatniego skanu,
+    /// dzięki czemu rotacja przeżywa restart.</summary>
+    private sealed record ScanTarget(string Label, string Query, string MetaKey, long Last);
+
+    /// <summary>Fraza wyszukiwania dla polowania na konsolę danej platformy.</summary>
+    private static string HuntQuery(string platform) => platform switch
+    {
+        "3ds" => "konsola nintendo 3ds",
+        "psvita" => "konsola ps vita",
+        "ps3" => "konsola ps3",
+        "ps4" => "konsola ps4",
+        "ps5" => "konsola ps5",
+        "psp" => "konsola psp",
+        "xbox360" => "konsola xbox 360",
+        "switch" => "konsola nintendo switch",
+        _ => $"konsola {platform}",
+    };
+
+    /// <summary>Ile gier z kolejki sprawdzić w jednym cyklu.</summary>
+    private int QueueBatchPerCycle => Math.Max(1, config.Defaults.WatchQueuePerCycle);
+
+    /// <summary>Postęp kolejki: ile celów ma już za sobą pierwszy skan.</summary>
+    public int QueueTotal { get; private set; }
+    public int QueueScanned { get; private set; }
+
+    /// <summary>
+    /// Kolejka celowanych wyszukiwań — w trybie wishlisty jedyne źródło ofert.
+    /// Każda śledzona gra (plus jedno polowanie na konsolę na cykl) dostaje
+    /// cyklicznie własne zapytanie, w kolejności od najdawniej sprawdzonej,
+    /// więc żaden tytuł nie zostaje w tyle i nic spoza wishlisty nie wpada do
+    /// bazy. Pierwszy skan celu tylko zasiewa ceny (bez alertów); kolejne
+    /// obiegi alertują normalnie — nowa oferta to świeża okazja.
+    /// </summary>
+    private async Task<int> RunWatchQueueAsync(
+        GameMatcher matcher,
+        Dictionary<(string, string), (string Key, string Title)> autoIndex,
+        CancellationToken ct)
+    {
+        ScanTarget Target(string label, string query, string metaKey) =>
+            new(label, query, metaKey,
+                long.TryParse(store.GetMeta(metaKey), out var ts) ? ts : 0L);
+
+        var games = watchlist.Snapshot()
+            .Select(g => Target(g.Title, g.Query, "watchscan:" + g.Query.ToLowerInvariant()))
+            .ToList();
+        // Polowania na konsole jechały dotąd na firehosie; bez niego potrzebują
+        // własnych zapytań. Jedno na cykl wystarcza — przy kilku platformach
+        // każda wraca co kilkanaście minut, dużo częściej niż gry.
+        var hunts = config.Defaults.PlatformHunts.Keys
+            .Select(p => Target($"Konsola {p}", HuntQuery(p), "huntscan:" + p))
+            .ToList();
+
+        QueueTotal = games.Count + hunts.Count;
+        QueueScanned = games.Concat(hunts).Count(t => t.Last > 0);
+        if (QueueTotal == 0)
+            return 0;
+
+        var due = games.OrderBy(t => t.Last).Take(QueueBatchPerCycle)
+            .Concat(hunts.OrderBy(t => t.Last).Take(1))
+            .ToList();
+
+        var scanned = new List<string>();
+        var newItems = 0;
+        foreach (var target in due)
+        {
+            ct.ThrowIfCancellationRequested();
+            IReadOnlyList<Listing> listings;
+            try
+            {
+                listings = await client.SearchAsync(target.Query, ct: ct);
             }
             catch (VintedBlockedException e)
             {
@@ -382,8 +443,8 @@ public sealed class TrackerEngine(
             }
             catch (Exception e) when (e is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
             {
-                Log.Warn($"Kolejka: \"{game.Query}\" nieudane: {e.Message}");
-                continue; // bez stempla — gra zostaje na czele kolejki
+                Log.Warn($"Kolejka: \"{target.Query}\" nieudane: {e.Message}");
+                continue; // bez stempla — cel zostaje na czele kolejki
             }
 
             var added = 0;
@@ -392,12 +453,16 @@ public sealed class TrackerEngine(
                 if (store.IsKnown(listing.Id))
                     continue;
                 added++;
-                // Pierwszy skan (last == 0) zasiewa bez alertów — to stare
-                // oferty budujące medianę, nie nowości.
-                await ProcessListingAsync(listing, matcher, autoIndex, firstRun: last == 0, ct);
+                // Pierwszy skan celu zasiewa bez alertów — to stare oferty
+                // budujące medianę, nie nowości.
+                await ProcessListingAsync(listing, matcher, autoIndex, firstRun: target.Last == 0, ct);
             }
-            store.SetMeta(metaKey, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString());
-            scanned.Add($"{game.Query} (+{added})");
+            if (target.Last == 0)
+                QueueScanned++;
+            newItems += added;
+            store.SetMeta(target.MetaKey, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString());
+            scanned.Add($"{target.Query} (+{added})");
+            LastError = null;
             await Task.Delay(TimeSpan.FromSeconds(1.5 + Random.Shared.NextDouble() * 1.5), ct);
         }
 
@@ -406,8 +471,10 @@ public sealed class TrackerEngine(
             var rotationHours = games.Count * config.Defaults.PollIntervalSeconds
                 / (double)QueueBatchPerCycle / 3600.0;
             Log.Info($"Kolejka wyszukiwań: {string.Join(", ", scanned)} — " +
-                     $"pełny obieg {games.Count} gier co ~{rotationHours:0.0} h");
+                     $"pełny obieg {games.Count} gier co ~{rotationHours:0.0} h " +
+                     $"(zasiane {QueueScanned}/{QueueTotal})");
         }
+        return newItems;
     }
 
     private async Task ProcessListingAsync(

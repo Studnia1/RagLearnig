@@ -317,6 +317,18 @@ public sealed class SqliteStore : IDisposable
         }
     }
 
+    /// <summary>Kasuje słownik gier auto (tryb wishlisty ich nie używa).
+    /// Oferty odpina od nich reindeksacja — tu znika sam słownik.</summary>
+    public int PurgeAutoGames()
+    {
+        lock (_lock)
+        {
+            using var cmd = _conn.CreateCommand();
+            cmd.CommandText = "DELETE FROM auto_games";
+            return cmd.ExecuteNonQuery();
+        }
+    }
+
     /// <summary>Słownik gier auto: (norm_key, platforma) → (klucz, tytuł).</summary>
     public Dictionary<(string Norm, string Platform), (string Key, string Title)> AutoGameIndex()
     {

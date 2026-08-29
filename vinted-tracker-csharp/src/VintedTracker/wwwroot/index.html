@@ -350,8 +350,12 @@ async function refresh() {
       ? 'Sprawdzam oferty…'
       : st.lastError
         ? `⚠ ${st.lastError}`
-        : `Ostatni cykl: ${ago(st.lastCycleFinished)} (+${st.lastCycleNewItems} ofert, ${st.lastCyclePages} str.) · ` +
-          `w bazie: ${st.itemsTotal} ofert, ${st.autoGames} gier auto · co ${st.pollIntervalSeconds} s · ` +
+        : `Ostatni cykl: ${ago(st.lastCycleFinished)} (+${st.lastCycleNewItems} ofert` +
+          `${st.watchlistOnly ? '' : ', ' + st.lastCyclePages + ' str.'}) · ` +
+          (st.watchlistOnly
+            ? `tylko wishlista · kolejka: ${st.queueScanned}/${st.queueTotal} zasianych · `
+            : `${st.autoGames} gier auto · `) +
+          `w bazie: ${st.itemsTotal} ofert · co ${st.pollIntervalSeconds} s · ` +
           `${st.baseUrl.replace('https://', '')}${st.catalogInfo ? ' · katalog: ' + st.catalogInfo : ''}` +
           ` · AI: ${st.visionEnabled ? '🟢 ' + st.visionModel : '🔴 wyłączona (brak klucza)'}`;
   } catch {

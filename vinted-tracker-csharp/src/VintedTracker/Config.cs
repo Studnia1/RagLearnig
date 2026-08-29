@@ -24,6 +24,17 @@ public sealed class Defaults
     /// watermark i tak kończy wcześniej, gdy nie ma nowych ofert.</summary>
     [JsonPropertyName("maxPagesPerCycle")] public int MaxPagesPerCycle { get; init; } = 10;
 
+    /// <summary>Tryb wishlisty (domyślny): jedynym źródłem ofert są celowane
+    /// wyszukiwania śledzonych gier i polowań na konsole. Bez tego tracker
+    /// zasysa cały katalog gier (firehose) — więcej pokrycia, ale i dużo
+    /// szumu spoza wishlisty w okazjach i słowniku gier auto.</summary>
+    [JsonPropertyName("watchlistOnly")] public bool WatchlistOnly { get; init; } = true;
+
+    /// <summary>Ile gier z kolejki odpytać w jednym cyklu. Pełny obieg trwa
+    /// (liczba gier / to) × pollIntervalSeconds — więcej = świeższe dane,
+    /// ale i większe ryzyko blokady anty-bot.</summary>
+    [JsonPropertyName("watchQueuePerCycle")] public int WatchQueuePerCycle { get; init; } = 6;
+
     /// <summary>Minimalna marża (mediana − cena) w walucie rynku, żeby wysłać push.</summary>
     [JsonPropertyName("minMargin")] public decimal MinMargin { get; init; } = 50m;
 
