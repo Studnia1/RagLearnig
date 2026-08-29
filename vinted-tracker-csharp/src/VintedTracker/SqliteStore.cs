@@ -321,6 +321,10 @@ public sealed class SqliteStore : IDisposable
         }
     }
 
+    /// <summary>Ile ofert ma jeszcze status okazji — także tych, których feed
+    /// nie pokazuje (limit 150, filtr trybu wishlisty, filtr poziomu w UI).</summary>
+    public long DealCount() => ScalarLong("SELECT COUNT(*) FROM items WHERE tier != 'None'");
+
     /// <summary>Czyści feed okazji: wszystkie oferty tracą status okazji.
     /// Same oferty zostają w bazie — nadal budują mediany i nadal są "znane",
     /// więc wyczyszczona oferta nie wróci przy kolejnym skanie.</summary>

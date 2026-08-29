@@ -159,6 +159,7 @@ public static class Program
                     engine.LastError,
                     engine.CatalogInfo,
                     ItemsTotal = store.ItemCount(),
+                    DealsTotal = store.DealCount(),
                     AutoGames = store.AutoGameCount(),
                     config.Defaults.WatchlistOnly,
                     engine.QueueTotal,
